@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- WhatsApp Message Views -->
+    
+    <record id="view_whatsapp_message_tree" model="ir.ui.view">
+        <field name="name">whatsapp.message.tree</field>
+        <field name="model">whatsapp.message</field>
+        <field name="arch" type="xml">
+            <tree string="WhatsApp Messages" default_order="msg_timestamp desc">
+                <field name="contact_id"/>
+                <field name="conversation_id"/>
+                <field name="message_type"/>
+                <field name="direction"/>
+                <field name="status"/>
+                <field name="content" optional="hide"/>
+                <field name="msg_timestamp"/>
+                <field name="delivered_time" optional="hide"/>
+                <field name="read_time" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_message_form" model="ir.ui.view">
+        <field name="name">whatsapp.message.form</field>
+        <field name="model">whatsapp.message</field>
+        <field name="arch" type="xml">
+            <form string="WhatsApp Message">
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="message_type" readonly="1"/>
+                            <field name="content" readonly="1"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="contact_id"/>
+                            <field name="direction"/>
+                            <field name="status"/>
+                        </group>
+                        <group>
+                            <field name="msg_timestamp"/>
+                            <field name="delivered_time"/>
+                            <field name="read_time"/>
+                        </group>
+                    </group>
+                    <group string="Media" invisible="message_type == 'text'">
+                        <field name="media_url"/>
+                        <field name="media_filename"/>
+                        <field name="caption"/>
+                        <field name="file_size"/>
+                        <field name="mime_type"/>
+                    </group>
+                    <group string="Context">
+                        <field name="quoted_message_id"/>
+                        <field name="context_object_id"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_message_search" model="ir.ui.view">
+        <field name="name">whatsapp.message.search</field>
+        <field name="model">whatsapp.message</field>
+        <field name="arch" type="xml">
+            <search string="Search Messages">
+                <field name="contact_id"/>
+                <field name="content"/>
+                <field name="message_type"/>
+                <filter string="Received" name="inbound" domain="[('direction', '=', 'inbound')]"/>
+                <filter string="Sent" name="outbound" domain="[('direction', '=', 'outbound')]"/>
+                <filter string="Failed" name="failed" domain="[('status', '=', 'failed')]"/>
+                <separator/>
+                <filter string="Today" name="today" domain="[('msg_timestamp', '>=', datetime.datetime.combine(context_today(), datetime.time(0,0,0)))]"/>
+                <filter string="This Week" name="week" domain="[('msg_timestamp', '>=', (context_today() - datetime.timedelta(days=context_today().weekday())).replace(hour=0,minute=0,second=0))]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Contact" name="contact" domain="[]" context="{'group_by': 'contact_id'}"/>
+                    <filter string="Message Type" name="type" domain="[]" context="{'group_by': 'message_type'}"/>
+                    <filter string="Date" name="date" domain="[]" context="{'group_by': 'msg_timestamp:day'}"/>
+                    <filter string="Status" name="status" domain="[]" context="{'group_by': 'status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- WhatsApp Message Actions -->
+    <record id="action_whatsapp_message" model="ir.actions.act_window">
+        <field name="name">WhatsApp Messages</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">whatsapp.message</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_whatsapp_message_search"/>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Manage WhatsApp Messages
+            </p>
+            <p>
+                View and manage all WhatsApp messages sent and received through the system.
+            </p>
+        </field>
+    </record>
+
+    <!-- WhatsApp Contact Views -->
+    <record id="view_whatsapp_contact_tree" model="ir.ui.view">
+        <field name="name">whatsapp.contact.tree</field>
+        <field name="model">whatsapp.contact</field>
+        <field name="arch" type="xml">
+            <tree string="WhatsApp Contacts">
+                <field name="name"/>
+                <field name="phone_number"/>
+                <field name="is_whatsapp_user"/>
+                <field name="unread_count"/>
+                <field name="last_seen"/>
+                <field name="partner_id"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_contact_form" model="ir.ui.view">
+        <field name="name">whatsapp.contact.form</field>
+        <field name="model">whatsapp.contact</field>
+        <field name="arch" type="xml">
+            <form string="WhatsApp Contact">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_send_message" type="object" class="oe_highlight" string="Send Message"/>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="phone_number"/>
+                            <field name="is_whatsapp_user"/>
+                            <field name="partner_id"/>
+                        </group>
+                        <group>
+                            <field name="last_seen"/>
+                            <field name="unread_count"/>
+                            <field name="profile_picture" widget="image"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_contact_search" model="ir.ui.view">
+        <field name="name">whatsapp.contact.search</field>
+        <field name="model">whatsapp.contact</field>
+        <field name="arch" type="xml">
+            <search string="Search Contacts">
+                <field name="name"/>
+                <field name="phone_number"/>
+                <filter string="WhatsApp Users" name="users" domain="[('is_whatsapp_user', '=', True)]"/>
+                <filter string="Has Unread" name="unread" domain="[('unread_count', '>', 0)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Partner Linked" name="partner" domain="[]" context="{'group_by': 'partner_id'}"/>
+                    <filter string="WhatsApp Status" name="status" domain="[]" context="{'group_by': 'is_whatsapp_user'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_whatsapp_contact" model="ir.actions.act_window">
+        <field name="name">WhatsApp Contacts</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">whatsapp.contact</field>
+        <field name="view_mode">tree,form</field>
+        <field name="search_view_id" ref="view_whatsapp_contact_search"/>
+    </record>
+
+    <!-- WhatsApp Conversation Views -->
+    <record id="view_whatsapp_conversation_tree" model="ir.ui.view">
+        <field name="name">whatsapp.conversation.tree</field>
+        <field name="model">whatsapp.conversation</field>
+        <field name="arch" type="xml">
+            <tree string="WhatsApp Conversations">
+                <field name="contact_id"/>
+                <field name="last_message_content"/>
+                <field name="message_count"/>
+                <field name="unread_count"/>
+                <field name="last_activity"/>
+                <field name="is_active"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_conversation_form" model="ir.ui.view">
+        <field name="name">whatsapp.conversation.form</field>
+        <field name="model">whatsapp.conversation</field>
+        <field name="arch" type="xml">
+            <form string="WhatsApp Conversation">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_create_message" type="object" class="oe_highlight" string="New Message"/>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="display_name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="contact_id"/>
+                            <field name="context_type"/>
+                            <field name="context_object_id"/>
+                        </group>
+                        <group>
+                            <field name="is_active"/>
+                            <field name="is_pinned"/>
+                            <field name="is_archived"/>
+                            <field name="is_muted"/>
+                        </group>
+                    </group>
+                    <group string="Statistics">
+                        <group>
+                            <field name="message_count"/>
+                            <field name="unread_count"/>
+                            <field name="last_activity"/>
+                        </group>
+                        <group>
+                            <field name="read_all_time"/>
+                            <field name="tag_ids"/>
+                        </group>
+                    </group>
+                    <group string="Recent Messages">
+                        <field name="message_ids" readonly="1">
+                            <tree limit="10">
+                                <field name="direction"/>
+                                <field name="message_type"/>
+                                <field name="content"/>
+                                <field name="msg_timestamp"/>
+                                <field name="status"/>
+                            </tree>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_whatsapp_conversation" model="ir.actions.act_window">
+        <field name="name">WhatsApp Conversations</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">whatsapp.conversation</field>
+        <field name="view_mode">tree,form</field>
+        <field name="domain">[('is_active', '=', True)]</field>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+    <!-- WhatsApp API Service Views -->
+    <record id="view_whatsapp_api_service_form" model="ir.ui.view">
+        <field name="name">whatsapp.api.service.form</field>
+        <field name="model">whatsapp.api.service</field>
+        <field name="arch" type="xml">
+            <form string="WhatsApp API Service">
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="check_connection_status" type="object" class="oe_highlight" string="Check Status"/>
+                        <button name="authenticate_with_qr" type="object" string="Generate QR"/>
+                    </div>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name"/>
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="is_active"/>
+                            <field name="is_authenticated"/>
+                            <field name="api_token" password="True"/>
+                            <field name="api_base_url"/>
+                        </group>
+                        <group>
+                            <field name="phone_number_id"/>
+                            <field name="business_account_id"/>
+                            <field name="last_status_check"/>
+                        </group>
+                    </group>
+                    <group string="Webhook Configuration">
+                        <group>
+                            <field name="webhook_url"/>
+                            <field name="webhook_verify_token" password="True"/>
+                            <field name="webhook_endpoint"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Status" name="status">
+                            <group>
+                                <label for="status_message"/>
+                                <div>
+                                    <field name="status_message" readonly="1" nolabel="1"/>
+                                </div>
+                            </group>
+                        </page>
+                        <page string="QR Authentication" name="qr" invisible="is_authenticated == True">
+                            <group string="QR Code">
+                                <field name="qr_code_data" widget="image" readonly="1"/>
+                                <field name="qr_expires_at" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_whatsapp_api_service" model="ir.actions.act_window">
+        <field name="name">WhatsApp API Services</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">whatsapp.api.service</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+</odoo>

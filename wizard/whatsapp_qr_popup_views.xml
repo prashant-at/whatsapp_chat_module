@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- QR Code Popup View -->
+        <record model="ir.ui.view" id="whatsapp_qr_popup_view">
+            <field name="name">whatsapp.qr.popup.form</field>
+            <field name="model">whatsapp.qr.popup</field>
+            <field name="arch" type="xml">
+                <form string="WhatsApp Login Required" class="pt-0 pb-0 o_whatsapp_qr_modal" data-model="whatsapp.qr.popup">
+                    <div class="text-center p-4">
+                        <h3>WhatsApp Login Required</h3>
+                        
+                        <!-- QR Code Container with Countdown -->
+                        <div class="qr-container position-relative d-inline-block mt-3 mb-3">
+                            <field name="qr_code_image_bin" widget="image" readonly="1" class="qr-image"/>
+                            
+                            <!-- Countdown Timer -->
+                            <div class="qr-countdown position-absolute" 
+                                 style="top: -10px; right: -10px; background: #25D366; color: white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; z-index: 10;">
+                                <span><field name="countdown_display" readonly="1" nolabel="1"/></span>
+                            </div>
+                        </div>
+                        
+                        <!-- Status Message -->
+                        <div class="mb-3">
+                            <field name="message" readonly="1" nolabel="1" class="text-center"/>
+                        </div>
+
+                        <!-- Live Update Counter -->
+                        <div class="mb-2">
+                            <span class="o_form_label">QR Updates</span>
+                            <field name="qr_update_count" readonly="1" nolabel="1"/>
+                        </div>
+
+                        <!-- Current QR String (exact, for manual entry or debugging) -->
+                        <div class="mb-3">
+                            <span class="o_form_label">QR String (current)</span>
+                            <field name="qr_code_image" readonly="1" nolabel="1" class="w-100"/>
+                            <p class="text-muted" style="margin-top:6px; word-break: break-all;">
+                                This shows the full QR payload string currently displayed.
+                            </p>
+                        </div>
+                        
+                        <!-- Phone Number Info -->
+                        <div class="mb-3">
+                            <p class="text-muted">
+                                <strong>Scan with: <field name="from_number" readonly="1" nolabel="1"/></strong>
+                            </p>
+                        </div>
+                        
+                        <!-- Action Buttons -->
+                        <div class="mt-4 d-flex justify-content-center gap-2">
+                            <button string="Continue" 
+                                    name="action_continue"
+                                    type="object" 
+                                    class="btn-primary"/>           
+                            <button string="Refresh UI" 
+                                    name="action_refresh_ui"
+                                    type="object" 
+                                    class="btn-warning"/>
+                            <button string="Close" 
+                                    name="action_close_popup"
+                                    type="object" 
+                                    class="btn-light"/>
+                        </div>
+                        
+                        <!-- Hidden fields for JavaScript -->
+                        <div class="d-none">
+                            <field name="qr_expires_at" readonly="1"/>
+                            <field name="countdown_seconds" readonly="1"/>
+                            <field name="is_expired" readonly="1"/>
+                            <field name="api_key" readonly="1"/>
+                            <field name="phone_number" readonly="1"/>
+                        </div>
+                    </div>
+                    
+                    <!-- Custom CSS and JavaScript -->
+                    <style>
+                        .qr-container {
+                            position: relative;
+                            display: inline-block;
+                            margin: 20px;
+                        }
+                        
+                        .qr-countdown {
+                            transition: all 0.3s ease;
+                            animation: pulse 2s infinite;
+                        }
+                        
+                        .qr-countdown.warning {
+                            background: #ff9500 !important;
+                        }
+                        
+                        .qr-countdown.critical {
+                            background: #ff4444 !important;
+                            animation: pulse 1s infinite;
+                        }
+                        
+                        .qr-countdown.expired {
+                            background: #666 !important;
+                            animation: none;
+                        }
+                        
+                        @keyframes pulse {
+                            0% { opacity: 1; }
+                            50% { opacity: 0.7; }
+                            100% { opacity: 1; }
+                        }
+                        
+                        .qr-image {
+                            max-width: 300px;
+                            height: auto;
+                        }
+                        
+                        .qr-image img {
+                            transition: opacity 0.3s ease-in-out;
+                        }
+                        
+                        .btn-secondary {
+                            background-color: #6c757d;
+                            border-color: #6c757d;
+                            color: white;
+                        }
+                        
+                        .btn-secondary:hover {
+                            background-color: #5a6268;
+                            border-color: #545b62;
+                        }
+                        
+                        .btn-info {
+                            background-color: #17a2b8;
+                            border-color: #17a2b8;
+                            color: white;
+                        }
+                        
+                        .btn-info:hover {
+                            background-color: #138496;
+                            border-color: #117a8b;
+                        }
+                        
+                        .btn-warning {
+                            background-color: #ffc107;
+                            border-color: #ffc107;
+                            color: #212529;
+                        }
+                        
+                        .btn-warning:hover {
+                            background-color: #e0a800;
+                            border-color: #d39e00;
+                            color: #212529;
+                        }
+                    </style>
+                    
+                    <!-- QR updates are now handled by closing and reopening popup via backend action -->
+                
+                </form>
+            </field>
+        </record>
+
+        <!-- QR Code Popup Action -->
+        <record id="action_whatsapp_qr_popup" model="ir.actions.act_window">
+            <field name="name">WhatsApp Login Required</field>
+            <field name="res_model">whatsapp.qr.popup</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+            <field name="view_id" ref="whatsapp_qr_popup_view"/>
+        </record>
+    </data>
+</odoo>

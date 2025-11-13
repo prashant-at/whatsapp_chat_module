@@ -1,0 +1,13 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_whatsapp_connection,whatsapp.connection,whatsapp_chat_module.model_whatsapp_connection,base.group_user,1,1,0,1
+access_whatsapp_connection_admin,whatsapp.connection,whatsapp_chat_module.model_whatsapp_connection,base.group_system,1,1,1,1
+access_whatsapp_request_response,whatsapp.request.response,whatsapp_chat_module.model_whatsapp_request_response,base.group_user,1,1,1,1
+access_whatsapp_stage,whatsapp.stage,whatsapp_chat_module.model_whatsapp_stage,base.group_user,1,1,1,1
+access_whatsapp_chat_ui,whatsapp.chat.ui,whatsapp_chat_module.model_whatsapp_chat_ui,base.group_user,1,1,1,1
+access_whatsapp_simple_wizard,whatsapp.simple.wizard,whatsapp_chat_module.model_whatsapp_chat_simple_wizard,base.group_user,1,1,1,1
+access_whatsapp_qr_popup,whatsapp.qr.popup,whatsapp_chat_module.model_whatsapp_qr_popup,base.group_user,1,1,1,1
+access_whatsapp_contact,whatsapp.contact,whatsapp_chat_module.model_whatsapp_contact,base.group_user,1,1,1,1
+access_whatsapp_message,whatsapp.message,whatsapp_chat_module.model_whatsapp_message,base.group_user,1,1,1,1
+access_whatsapp_conversation,whatsapp.conversation,whatsapp_chat_module.model_whatsapp_conversation,base.group_user,1,1,1,1
+access_whatsapp_api_service,whatsapp.api.service,whatsapp_chat_module.model_whatsapp_api_service,base.group_user,1,1,1,1
+access_whatsapp_template,whatsapp.template,whatsapp_chat_module.model_whatsapp_template,base.group_user,1,1,1,1

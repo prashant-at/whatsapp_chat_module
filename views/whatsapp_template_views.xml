@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- WhatsApp Template List View -->
+        <record id="view_whatsapp_template_tree" model="ir.ui.view">
+            <field name="name">whatsapp.template.tree</field>
+            <field name="model">whatsapp.template</field>
+            <field name="arch" type="xml">
+                <tree string="WhatsApp Templates">
+                    <field name="name"/>
+                    <field name="model_id" string="Applies to"/>
+                    <field name="description"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- WhatsApp Template Form View -->
+        <record id="view_whatsapp_template_form" model="ir.ui.view">
+            <field name="name">whatsapp.template.form</field>
+            <field name="model">whatsapp.template</field>
+            <field name="arch" type="xml">
+                <form string="Templates">
+                    <header>
+                    </header>
+                    <sheet>
+                        <div class="oe_title">
+                            <label for="name"/>
+                            <h1><field name="name" class="w-100"
+                                required="1" placeholder='e.g. "Welcome WhatsApp"'/></h1>
+                            <group>
+                                <field name="model_id" placeholder="e.g. Contact" required="1" options="{'no_create': True}"/>
+                                <field name="subject" options="{'dynamic_placeholder': true}"
+                                       placeholder='e.g. "Welcome to MyCompany" or "Nice to meet you, {{ object.name }}"'/>
+                                <field name="model" invisible="1"/>
+                            </group>
+                        </div>
+                        <notebook>
+                            <page string="Content" name="content">
+                                <field name="body_html" widget="html" class="oe-bordered-editor"
+                                    options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
+                                <field name="attachment_ids" widget="many2many_binary"/>
+                            </page>
+                            <page string="Settings" name="settings">
+                                <group col="2">
+                                    <group>
+                                        <field name="lang" placeholder="{{ object.partner_id.lang }}"/>
+                                        <!-- <field name="auto_delete"/> -->
+                                        <field name="report_template_ids" domain="[('model','=',model)]"
+                                            widget="many2many_tags"
+                                            options="{'no_create': True}"/>
+                                    </group>
+                                    <group>
+                                        <field name="description"/>
+                                    </group>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- WhatsApp Template Search View -->
+        <record id="view_whatsapp_template_search" model="ir.ui.view">
+            <field name="name">whatsapp.template.search</field>
+            <field name="model">whatsapp.template</field>
+            <field name="arch" type="xml">
+                <search string="WhatsApp Templates">
+                    <field name="name"/>
+                    <field name="model_id"/>
+                    <field name="user_id"/>
+                    <filter string="Base Templates" name="base_templates" domain="[('template_category', '=', 'base_template')]"/>
+                    <filter string="My Templates" name="my_templates" domain="[('template_category', '=', 'custom_template')]"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Model" name="group_model" context="{'group_by': 'model_id'}"/>
+                        <filter string="User" name="group_user" context="{'group_by': 'user_id'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- WhatsApp Template Action -->
+        <record id="action_whatsapp_template" model="ir.actions.act_window">
+            <field name="name">WhatsApp Templates</field>
+            <field name="res_model">whatsapp.template</field>
+            <field name="view_mode">tree,form</field>
+            <field name="search_view_id" ref="view_whatsapp_template_search"/>
+            <field name="help" type="html">
+                <p class="o_view_nocontent_smiling_face">
+                    Create a WhatsApp template
+                </p>
+                <p>
+                    WhatsApp templates allow you to create reusable message templates with dynamic content.
+                    Use placeholders like {{ object.name }} to personalize messages.
+                </p>
+            </field>
+        </record>
+    </data>
+</odoo>
+
