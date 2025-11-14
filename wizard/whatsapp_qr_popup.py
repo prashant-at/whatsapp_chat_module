@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import datetime
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 import logging
@@ -25,6 +26,7 @@ class WhatsAppQRPopup(models.TransientModel):
     
     # Store original wizard data
     original_wizard_id = fields.Many2one('whatsapp.chat.simple.wizard', string='Original Wizard')
+    original_campaign_id = fields.Many2one('whatsapp.marketing.campaign', string='Original Campaign')
     # Live update counter (direct field for popup updates)
     qr_update_count = fields.Integer(
         string='QR Updates',
@@ -350,23 +352,52 @@ class WhatsAppQRPopup(models.TransientModel):
                 _logger.warning(f"⚠️ [QR Popup] No status type found in data: {status_data}")
                 return False
             
+            # Around line 355-356, fix:
+
+            time_threshold = datetime.datetime.now() - timedelta(minutes=2)
+            time_threshold_str = fields.Datetime.to_string(time_threshold)
             # Find the latest QR popup
-            popup = self.env['whatsapp.qr.popup'].search([], order='create_date desc', limit=1)
+            print("time_threshold_str", time_threshold_str)
+            popup = self.env['whatsapp.qr.popup'].search([('create_date', '>=', time_threshold_str)], order='create_date desc', limit=1)
+            print("popup", popup.create_date)
             if not popup:
                 _logger.warning(f"⚠️ [QR Popup] No popup found for status event")
                 return False
             
             # Handle different status types
-            if status_type == 'authenticated':
-                _logger.info(f"✅ [QR Popup] Authenticated successfully")
-                popup.write({'message': 'Authenticated! WhatsApp is connecting...'})
-                return True
+            # if status_type == 'authenticated':
+            #     _logger.info(f"✅ [QR Popup] Authenticated successfully")
+            #     popup.write({'message': 'Authenticated! WhatsApp is connecting...'})
+            #     return True
             
             elif status_type == 'ready':
                 _logger.info(f"✅ [QR Popup] WhatsApp is ready, closing popup and sending messages")
-                # Trigger message sending and show notification
-                if popup.original_wizard_id:
+                
+                # Find the latest NON-EXPIRED QR popup (exclude old/stale ones)
+                popup = self.env['whatsapp.qr.popup'].search([
+                    ('create_date', '>=', time_threshold_str)
+                ], order='create_date desc', limit=1)
+                print("popup", popup)
+                if not popup:
+                    _logger.warning(f"⚠️ [QR Popup] No active popup found for ready status")
+                    return False
+                
+                # Trigger message sending - check which type this popup is
+                if popup.original_campaign_id and not popup.original_wizard_id:
+                    # Campaign popup - trigger campaign resend
+                    _logger.info(f"✅ [QR Popup] Triggering campaign resend for campaign {popup.original_campaign_id.id}")
+                    popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                elif popup.original_wizard_id and not popup.original_campaign_id:
+                    # Wizard popup - trigger wizard resend
+                    _logger.info(f"✅ [QR Popup] Triggering wizard resend for wizard {popup.original_wizard_id.id}")
                     popup.original_wizard_id.action_close_qr_popup(popup=popup)
+                elif popup.original_campaign_id and popup.original_wizard_id:
+                    # Both set (shouldn't happen) - prioritize campaign
+                    _logger.warning(f"⚠️ [QR Popup] Both campaign and wizard set on popup {popup.id}, using campaign")
+                    popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                else:
+                    _logger.warning(f"⚠️ [QR Popup] No original_wizard_id or original_campaign_id found on popup {popup.id}")
+                
                 # Close the popup after triggering send
                 popup.with_context(skip_write=True).unlink()
                 return True

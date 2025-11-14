@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- WhatsApp Mailing Contact Import Form View -->
+        <record id="view_whatsapp_mailing_contact_import_form" model="ir.ui.view">
+            <field name="name">whatsapp.mailing.contact.import.form</field>
+            <field name="model">whatsapp.mailing.contact.import</field>
+            <field name="arch" type="xml">
+                <form string="Import WhatsApp Contacts">
+                    <sheet>
+                        <group>
+                            <field name="whatsapp_list_ids" widget="many2many_tags"
+                                placeholder="Select WhatsApp mailing lists..."
+                                options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="contact_list" 
+                                placeholder="John Doe +91 9157000128&#10;Jane Smith +1 2345678900&#10;+91 9876543210"
+                                widget="text" nolabel="1"/>
+                        </group>
+                        <div class="alert alert-info" role="alert">
+                            <p><strong>Format:</strong> One contact per line</p>
+                            <ul>
+                                <li>"Name +1234567890"</li>
+                                <li>"Name +91 9157000128"</li>
+                                <li>Or just "+1234567890"</li>
+                            </ul>
+                            <p>For more than 5000 contacts, use the file import option.</p>
+                        </div>
+                    </sheet>
+                    <footer>
+                        <button name="action_import" string="Import" type="object" class="btn-primary"/>
+                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                    </footer>
+                </form>
+            </field>
+        </record>
+
+        <!-- WhatsApp Mailing Contact Import Action -->
+        <record id="action_whatsapp_mailing_contact_import" model="ir.actions.act_window">
+            <field name="name">Import WhatsApp Contacts</field>
+            <field name="res_model">whatsapp.mailing.contact.import</field>
+            <field name="view_mode">form</field>
+            <field name="target">new</field>
+        </record>
+    </data>
+</odoo>
+

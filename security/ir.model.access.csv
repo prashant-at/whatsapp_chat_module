@@ -11,3 +11,9 @@ access_whatsapp_message,whatsapp.message,whatsapp_chat_module.model_whatsapp_mes
 access_whatsapp_conversation,whatsapp.conversation,whatsapp_chat_module.model_whatsapp_conversation,base.group_user,1,1,1,1
 access_whatsapp_api_service,whatsapp.api.service,whatsapp_chat_module.model_whatsapp_api_service,base.group_user,1,1,1,1
 access_whatsapp_template,whatsapp.template,whatsapp_chat_module.model_whatsapp_template,base.group_user,1,1,1,1
+access_whatsapp_marketing_campaign_user,whatsapp.marketing.campaign.user,whatsapp_chat_module.model_whatsapp_marketing_campaign,base.group_user,1,1,1,1
+access_whatsapp_marketing_campaign_test_user,whatsapp.marketing.campaign.test.user,whatsapp_chat_module.model_whatsapp_marketing_campaign_test,base.group_user,1,1,1,1
+access_whatsapp_mailing_contact_user,whatsapp.mailing.contact.user,whatsapp_chat_module.model_whatsapp_mailing_contact,base.group_user,1,1,1,1
+access_whatsapp_mailing_list_user,whatsapp.mailing.list.user,whatsapp_chat_module.model_whatsapp_mailing_list,base.group_user,1,1,1,1
+access_whatsapp_mailing_subscription_user,whatsapp.mailing.subscription.user,whatsapp_chat_module.model_whatsapp_mailing_subscription,base.group_user,1,1,1,1
+access_whatsapp_mailing_contact_import_user,whatsapp.mailing.contact.import.user,whatsapp_chat_module.model_whatsapp_mailing_contact_import,base.group_user,1,1,1,1

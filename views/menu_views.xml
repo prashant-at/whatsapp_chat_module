@@ -83,8 +83,20 @@
         <menuitem id="menu_whatsapp_marketing"
                   name="WhatsApp Marketing"
                   parent="menu_whatsapp_configuration"
-                  action="action_whatsapp_template"
+                  action="action_whatsapp_marketing_campaign"
                   sequence="20"/>
+
+        <menuitem id="menu_whatsapp_mailing_lists"
+                  name="WhatsApp Lists"
+                  parent="menu_whatsapp_configuration"
+                  action="action_whatsapp_mailing_list"
+                  sequence="30"/>
+
+        <menuitem id="menu_whatsapp_mailing_contacts"
+                  name="WhatsApp Contacts"
+                  parent="menu_whatsapp_configuration"
+                  action="action_whatsapp_mailing_contact"
+                  sequence="40"/>
     </data>
 </odoo>
  
