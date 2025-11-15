@@ -7,30 +7,31 @@
             <field name="model">whatsapp.mailing.contact.import</field>
             <field name="arch" type="xml">
                 <form string="Import WhatsApp Contacts">
-                    <sheet>
-                        <group>
-                            <field name="whatsapp_list_ids" widget="many2many_tags"
-                                placeholder="Select WhatsApp mailing lists..."
-                                options="{'no_create': True}"/>
-                        </group>
-                        <group>
-                            <field name="contact_list" 
-                                placeholder="John Doe +91 9157000128&#10;Jane Smith +1 2345678900&#10;+91 9876543210"
-                                widget="text" nolabel="1"/>
-                        </group>
-                        <div class="alert alert-info" role="alert">
-                            <p><strong>Format:</strong> One contact per line</p>
-                            <ul>
-                                <li>"Name +1234567890"</li>
-                                <li>"Name +91 9157000128"</li>
-                                <li>Or just "+1234567890"</li>
-                            </ul>
-                            <p>For more than 5000 contacts, use the file import option.</p>
-                        </div>
-                    </sheet>
+                    <group>
+                        <field name="whatsapp_list_ids" string="Import contacts in"
+                            widget="many2many_tags" placeholder="Select WhatsApp mailing lists"
+                            options="{'no_create': True}"/>
+                    </group>
+                    <p>
+                        Write or paste phone numbers in the field below.
+                        Each line will be imported as a WhatsApp mailing list contact.
+                    </p>
+                    <label for="contact_list" class="mb-2">Contact List</label>
+                    <field name="contact_list"
+                        nolabel="1" default_focus="1"
+                        placeholder='"John Doe" +91 9157000128&#10;"Jane Smith" +1 2345678900&#10;+91 9876543210'/>
+                    <p class="text-muted mb-0">
+                        Want to import country, company name and more?
+                        <button type="object" name="action_open_base_import"
+                            class="fw-normal px-0 btn btn-link">
+                            Upload a file
+                        </button>
+                    </p>
                     <footer>
-                        <button name="action_import" string="Import" type="object" class="btn-primary"/>
-                        <button string="Cancel" class="btn-secondary" special="cancel"/>
+                        <button string="Import" type="object" name="action_import"
+                            class="btn-primary" data-hotkey="q"/>
+                        <button string="Discard" class="btn-secondary"
+                            special="cancel" data-hotkey="x"/>
                     </footer>
                 </form>
             </field>

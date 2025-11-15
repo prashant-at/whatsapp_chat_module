@@ -66,6 +66,9 @@ export class WhatsAppWebClientAction extends Component {
                 isLoadingMore: false,
             },
             isLoadingMessages: false,
+            // Media sending state
+            selectedMedia: null, // {file: File, type: string, preview: string}
+            mediaUploading: false,
         });
         // Timestamp for debouncing message refetch
         this._lastMessagesFetchTs = 0;
@@ -1020,11 +1023,12 @@ export class WhatsAppWebClientAction extends Component {
             const mapped = messages.map((m) => {
                 const direction = m.fromMe ? 'outbound' : 'inbound';
                 let status = 'sent';
-                if (typeof m.ack === 'number') {
-                    if (m.ack >= 3) status = 'delivered'; // treat 3+ as double ticks/read
-                    else if (m.ack >= 2) status = 'delivered';
-                    else if (m.ack >= 1) status = 'sent';
-                }
+                const ack = parseInt(m.ack, 10) || 0;
+                
+                if (ack >= 3) status = 'read';
+                else if (ack >= 2) status = 'delivered';
+                else if (ack >= 1) status = 'sent';
+                
                 return {
                     id: m.id || m.messageId,
                     content: m.body || m.text || '',
@@ -1032,7 +1036,7 @@ export class WhatsAppWebClientAction extends Component {
                     msg_timestamp: m.timestamp || m.createdAt || m.time,
                     message_type: m.messageType || m.type || 'text',
                     status,
-                    // Derived fields used by template
+                    ack: ack,
                     timestamp: (m.timestamp || m.createdAt || m.time),
                     type: (m.messageType || m.type || 'text'),
                 };
@@ -1152,7 +1156,9 @@ export class WhatsAppWebClientAction extends Component {
     
     async sendMessage() {
         const messageText = this.state.messageInput.trim();
-        if (!messageText || !this.state.selectedConversation) return;
+        const hasMedia = this.state.selectedMedia !== null;
+        
+        if ((!messageText && !hasMedia) || !this.state.selectedConversation) return;
         
         const selected = this.state.selectedConversation;
         const recipientPhone = selected.contact_phone?.trim();
@@ -1167,30 +1173,37 @@ export class WhatsAppWebClientAction extends Component {
             return;
         }
         
-        // Store original message for optimistic update
+        // Store original message and media
         const originalMessage = messageText;
+        const selectedMedia = this.state.selectedMedia;
         
-        // Clear input immediately for better UX
+        // Clear inputs
         this.state.messageInput = "";
+        this.removeSelectedMedia();
         
-        // Create optimistic message (will be replaced by real message from socket)
+        // Create optimistic message
         const tempMessageId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const messageType = selectedMedia ? selectedMedia.type : 'chat';
+        
         const optimisticMessage = {
             id: tempMessageId,
-            content: originalMessage,
+            content: originalMessage || (selectedMedia ? selectedMedia.file.name : ''),
             direction: 'outbound',
             msg_timestamp: new Date().toISOString(),
-            message_type: 'chat',
-            status: 'pending', // Will update when socket confirms
+            message_type: messageType,
+            status: 'pending',
+            ack: 0,
             timestamp: new Date().toISOString(),
-            type: 'chat'
+            type: messageType,
+            media_url: selectedMedia?.preview || null,
+            media_type: selectedMedia?.type || null,
+            fileName: selectedMedia?.file.name || null
         };
         
-        // Append optimistic message to UI
         this.state.messages.push(optimisticMessage);
         this._messageIdSet.add(tempMessageId);
         
-        // Scroll to bottom after adding message
+        // Scroll to bottom
         setTimeout(() => {
             const container = this.refs?.messagesContainer;
             if (container) {
@@ -1199,35 +1212,47 @@ export class WhatsAppWebClientAction extends Component {
         }, 0);
         
         try {
+            this.state.mediaUploading = true;
+            
             const url = `${this.backendApiUrl}/api/whatsapp/send`;
             const headers = {
                 'x-api-key': this.apiKey.trim(),
                 'x-phone-number': this.phoneNumber.trim(),
-                // 'Origin': '127.0.0.1', // Can be made dynamic
-                'Content-Type': 'application/json'
             };
             
-            const body = JSON.stringify({
-                to: recipientPhone,
-                messageType: 'chat',
-                body: originalMessage
-            });
+            let response;
             
-            console.log("[WA][Action] Sending message:", {
-                url,
-                to: recipientPhone,
-                body: originalMessage,
-                headers: {
-                    'x-api-key': headers['x-api-key'].substring(0, 20) + '...',
-                    'x-phone-number': headers['x-phone-number']
-                }
-            });
+            // If media is present, send as FormData
+            if (selectedMedia) {
+                const formData = new FormData();
+                formData.append('to', recipientPhone);
+                formData.append('messageType', messageType);
+                formData.append('body', originalMessage || '');
+                // Use 'files' (plural) to match backend API expectation
+                formData.append('files', selectedMedia.file, selectedMedia.file.name);
+                
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
+                });
+            } else {
+                // Text message only - send as JSON
+                headers['Content-Type'] = 'application/json';
+                const body = {
+                    to: recipientPhone,
+                    messageType: messageType,
+                    body: originalMessage || ''
+                };
+                
+                response = await fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(body)
+                });
+            }
             
-            const response = await fetch(url, {
-                method: 'POST',
-                headers: headers,
-                body: body
-            });
+            this.state.mediaUploading = false;
             
             let result;
             try {
@@ -1238,8 +1263,6 @@ export class WhatsAppWebClientAction extends Component {
             }
             
             if (!response.ok || !result?.success) {
-                const errorMessage = result?.message || result?.error || response.statusText;
-                
                 // Remove optimistic message on error
                 const messageIndex = this.state.messages.findIndex(m => m.id === tempMessageId);
                 if (messageIndex >= 0) {
@@ -1247,10 +1270,13 @@ export class WhatsAppWebClientAction extends Component {
                     this._messageIdSet.delete(tempMessageId);
                 }
                 
-                // Restore input
+                // Restore input and media
                 this.state.messageInput = originalMessage;
+                if (selectedMedia) {
+                    this.state.selectedMedia = selectedMedia;
+                }
                 
-                throw new Error(`Failed to send message: ${errorMessage}`);
+                throw new Error(result?.message || result?.error || 'Failed to send message');
             }
             
             console.log("[WA][Action] ✅ Message sent successfully:", result);
@@ -1262,8 +1288,8 @@ export class WhatsAppWebClientAction extends Component {
             const chatIndex = this._conversationMap.get(selected.conversation_id);
             if (chatIndex !== undefined && chatIndex >= 0 && chatIndex < this.state.conversations.length) {
                 const chat = this.state.conversations[chatIndex];
-                chat.last_message_content = originalMessage;
-                chat.last_message_type = 'chat';
+                chat.last_message_content = originalMessage || (selectedMedia ? selectedMedia.file.name : '');
+                chat.last_message_type = messageType;
                 chat.last_activity = optimisticMessage.timestamp;
                 
                 // Move chat to top if not already
@@ -1281,6 +1307,7 @@ export class WhatsAppWebClientAction extends Component {
             }
             
         } catch (error) {
+            this.state.mediaUploading = false;
             console.error("[WA][Action] ❌ Error sending message:", error);
             console.error("[WA][Action] Error details:", error.message, error.stack);
             
@@ -1318,8 +1345,136 @@ export class WhatsAppWebClientAction extends Component {
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
     
+    getAckColor(message) {
+        if (message.direction !== 'outbound') {
+            return null;
+        }
+        
+        const ack = message.ack || 0;
+        return ack >= 3 ? '#53bdeb' : '#667781';
+    }
+    
     getEmojis() {
         return ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣"];
+    }
+    
+    // Media handling methods
+    getFileAcceptTypes() {
+        return "image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.csv";
+    }
+    
+    openMediaSelector() {
+        // Try multiple methods to find the file input
+        let fileInput = null;
+        
+        // Method 1: Try refs (if available)
+        if (this.refs && this.refs.fileInput) {
+            fileInput = this.refs.fileInput;
+        }
+        // Method 2: Try __owl__ refs (OWL internal)
+        else if (this.__owl__ && this.__owl__.refs && this.__owl__.refs.fileInput) {
+            fileInput = this.__owl__.refs.fileInput;
+        }
+        // Method 3: Use class selector
+        else if (this.el) {
+            fileInput = this.el.querySelector('.whatsapp-file-input') || 
+                       this.el.querySelector('input[type="file"]');
+        }
+        // Method 4: Search in document (fallback)
+        else {
+            fileInput = document.querySelector('.whatsapp-file-input');
+        }
+        
+        if (fileInput) {
+            fileInput.click();
+        } else {
+            console.error("[WA][Action] File input not found. Available refs:", this.refs);
+            console.error("[WA][Action] Component element:", this.el);
+        }
+    }
+    
+    handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const fileType = this.detectMediaType(file);
+        let preview = null;
+        
+        if (fileType === 'image') {
+            preview = URL.createObjectURL(file);
+        } else if (fileType === 'video') {
+            preview = URL.createObjectURL(file);
+        }
+        
+        this.state.selectedMedia = {
+            file: file,
+            type: fileType,
+            preview: preview
+        };
+        
+        // Reset file input
+        event.target.value = '';
+    }
+    
+    detectMediaType(file) {
+        const mimeType = file.type.toLowerCase();
+        const fileName = file.name.toLowerCase();
+        
+        if (mimeType.startsWith('image/')) return 'image';
+        if (mimeType.startsWith('video/')) return 'video';
+        if (mimeType.startsWith('audio/')) return 'audio';
+        
+        // Check document extensions
+        const docExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'];
+        if (docExtensions.some(ext => fileName.endsWith(ext))) {
+            return 'document';
+        }
+        
+        return 'document'; // Default
+    }
+    
+    removeSelectedMedia() {
+        if (this.state.selectedMedia?.preview) {
+            URL.revokeObjectURL(this.state.selectedMedia.preview);
+        }
+        this.state.selectedMedia = null;
+    }
+    
+    formatFileSize(bytes) {
+        if (!bytes) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+    
+    async uploadMedia(file, mediaType) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', mediaType);
+        
+        try {
+            const url = `${this.backendApiUrl}/api/whatsapp/upload-media`;
+            const headers = {
+                'x-api-key': this.apiKey.trim(),
+                'x-phone-number': this.phoneNumber.trim(),
+            };
+            
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: headers,
+                body: formData
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                return result.media_id || result.url || result.id;
+            }
+            throw new Error(result.error || 'Upload failed');
+        } catch (error) {
+            console.error('[WA][Action] Media upload error:', error);
+            throw error;
+        }
     }
     
     hasNoConversations() {
@@ -1625,11 +1780,11 @@ export class WhatsAppWebClientAction extends Component {
         // Map message to UI format
         const direction = msg.fromMe ? 'outbound' : 'inbound';
         let status = 'sent';
-        if (typeof msg.ack === 'number') {
-            if (msg.ack >= 3) status = 'delivered';
-            else if (msg.ack >= 2) status = 'delivered';
-            else if (msg.ack >= 1) status = 'sent';
-        }
+        const ack = parseInt(msg.ack, 10) || 0;
+        
+        if (ack >= 3) status = 'read';
+        else if (ack >= 2) status = 'delivered';
+        else if (ack >= 1) status = 'sent';
         
         const mappedMessage = {
             id: msgId,
@@ -1638,6 +1793,7 @@ export class WhatsAppWebClientAction extends Component {
             msg_timestamp: msg.timestamp || msg.createdAt || msg.time,
             message_type: msg.messageType || msg.type || 'text',
             status,
+            ack: ack,
             timestamp: (msg.timestamp || msg.createdAt || msg.time),
             type: (msg.messageType || msg.type || 'text'),
         };
@@ -1689,7 +1845,26 @@ export class WhatsAppWebClientAction extends Component {
                     }
                 }
             } else {
-                console.log("[WA][Action] ⚠️ Message already exists, skipping:", msgId);
+                // Message already exists - but ack might have changed (status update)
+                const existingMsgIndex = this.state.messages.findIndex(m => m.id === msgId);
+                if (existingMsgIndex >= 0) {
+                    const existingMsg = this.state.messages[existingMsgIndex];
+                    
+                    // Update ack if it changed (for status updates)
+                    if (msg.ack !== undefined && msg.ack !== null) {
+                        const newAck = parseInt(msg.ack, 10) || 0;
+                        if (newAck !== existingMsg.ack) {
+                            existingMsg.ack = newAck;
+                            
+                            // Update status based on new ack
+                            if (newAck >= 3) existingMsg.status = 'read';
+                            else if (newAck >= 2) existingMsg.status = 'delivered';
+                            else if (newAck >= 1) existingMsg.status = 'sent';
+                        }
+                    }
+                } else {
+                    console.log("[WA][Action] ⚠️ Message already exists, skipping:", msgId);
+                }
             }
         }
         

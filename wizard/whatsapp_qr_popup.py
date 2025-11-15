@@ -27,6 +27,10 @@ class WhatsAppQRPopup(models.TransientModel):
     # Store original wizard data
     original_wizard_id = fields.Many2one('whatsapp.chat.simple.wizard', string='Original Wizard')
     original_campaign_id = fields.Many2one('whatsapp.marketing.campaign', string='Original Campaign')
+    original_test_wizard_id = fields.Many2one('whatsapp.marketing.campaign.test', string='Original Test Wizard')
+    # Store test data in case test wizard is closed
+    test_phone_to = fields.Char('Test Phone Number', readonly=True, help='Phone number for test message')
+    test_campaign_id = fields.Many2one('whatsapp.marketing.campaign', string='Test Campaign', readonly=True, help='Campaign for test message')
     # Live update counter (direct field for popup updates)
     qr_update_count = fields.Integer(
         string='QR Updates',
@@ -383,20 +387,79 @@ class WhatsAppQRPopup(models.TransientModel):
                     return False
                 
                 # Trigger message sending - check which type this popup is
-                if popup.original_campaign_id and not popup.original_wizard_id:
+                # Test messages take priority (check first)
+                if (popup.original_test_wizard_id or popup.test_phone_to) and not popup.original_campaign_id:
+                    # Test wizard popup - trigger test resend
+                    if popup.original_test_wizard_id:
+                        # Try to use test wizard if it still exists
+                        try:
+                            test_wizard = popup.original_test_wizard_id
+                            if test_wizard.exists():
+                                _logger.info(f"✅ [QR Popup] Triggering test resend for test wizard {test_wizard.id}")
+                                test_wizard.resend_test(popup=popup)
+                            else:
+                                # Test wizard was closed, use stored data
+                                _logger.info(f"✅ [QR Popup] Test wizard closed, using stored test data")
+                                if popup.test_campaign_id and popup.test_phone_to:
+                                    result = popup.test_campaign_id._send_to_recipient_via_api(
+                                        popup.test_phone_to.strip(),
+                                        'Test Recipient',
+                                        popup.test_campaign_id.body,
+                                        popup.test_campaign_id.attachment_ids
+                                    )
+                                    if not result.get('success'):
+                                        _logger.error(f"❌ [QR Popup] Failed to send test: {result.get('error')}")
+                        except Exception as e:
+                            _logger.error(f"❌ [QR Popup] Error triggering test resend: {e}")
+                            # Fallback: try using stored test data
+                            if popup.test_campaign_id and popup.test_phone_to:
+                                try:
+                                    popup.test_campaign_id._send_to_recipient_via_api(
+                                        popup.test_phone_to.strip(),
+                                        'Test Recipient',
+                                        popup.test_campaign_id.body,
+                                        popup.test_campaign_id.attachment_ids
+                                    )
+                                except Exception as e2:
+                                    _logger.error(f"❌ [QR Popup] Fallback test send also failed: {e2}")
+                    else:
+                        # Only stored test data available
+                        _logger.info(f"✅ [QR Popup] Using stored test data (wizard not available)")
+                        if popup.test_campaign_id and popup.test_phone_to:
+                            try:
+                                result = popup.test_campaign_id._send_to_recipient_via_api(
+                                    popup.test_phone_to.strip(),
+                                    'Test Recipient',
+                                    popup.test_campaign_id.body,
+                                    popup.test_campaign_id.attachment_ids
+                                )
+                                if not result.get('success'):
+                                    _logger.error(f"❌ [QR Popup] Failed to send test: {result.get('error')}")
+                            except Exception as e:
+                                _logger.error(f"❌ [QR Popup] Error sending test from stored data: {e}")
+                elif popup.original_campaign_id and not popup.original_wizard_id:
                     # Campaign popup - trigger campaign resend
                     _logger.info(f"✅ [QR Popup] Triggering campaign resend for campaign {popup.original_campaign_id.id}")
-                    popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                    try:
+                        popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                    except Exception as e:
+                        _logger.error(f"❌ [QR Popup] Error triggering campaign resend: {e}")
                 elif popup.original_wizard_id and not popup.original_campaign_id:
                     # Wizard popup - trigger wizard resend
                     _logger.info(f"✅ [QR Popup] Triggering wizard resend for wizard {popup.original_wizard_id.id}")
-                    popup.original_wizard_id.action_close_qr_popup(popup=popup)
+                    try:
+                        popup.original_wizard_id.action_close_qr_popup(popup=popup)
+                    except Exception as e:
+                        _logger.error(f"❌ [QR Popup] Error triggering wizard resend: {e}")
                 elif popup.original_campaign_id and popup.original_wizard_id:
                     # Both set (shouldn't happen) - prioritize campaign
                     _logger.warning(f"⚠️ [QR Popup] Both campaign and wizard set on popup {popup.id}, using campaign")
-                    popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                    try:
+                        popup.original_campaign_id.action_close_qr_popup(popup=popup)
+                    except Exception as e:
+                        _logger.error(f"❌ [QR Popup] Error triggering campaign resend: {e}")
                 else:
-                    _logger.warning(f"⚠️ [QR Popup] No original_wizard_id or original_campaign_id found on popup {popup.id}")
+                    _logger.warning(f"⚠️ [QR Popup] No original_wizard_id, original_campaign_id, or original_test_wizard_id found on popup {popup.id}")
                 
                 # Close the popup after triggering send
                 popup.with_context(skip_write=True).unlink()

@@ -8,6 +8,7 @@ class WhatsAppMailingList(models.Model):
     _description = 'WhatsApp Mailing List'
     _inherit = ['mail.thread']
     _order = 'name'
+    _mailing_enabled = True
 
     name = fields.Char('WhatsApp Mailing List', required=True)
     active = fields.Boolean(default=True)

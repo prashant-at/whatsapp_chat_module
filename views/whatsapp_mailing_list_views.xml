@@ -27,7 +27,6 @@
                 <tree string="WhatsApp Mailing Lists" sample="1">
                     <field name="name"/>
                     <field name="contact_count" string="Recipients"/>
-                    <field name="active" invisible="1"/>
                 </tree>
             </field>
         </record>
@@ -76,6 +75,7 @@
                     <field name="active"/>
                     <templates>
                         <t t-name="kanban-box">
+                            <!-- Card when the Kanban view is grouped  -->
                             <div class="oe_kanban_global_click o_mailing_list_kanban_grouped">
                                 <div class="oe_kanban_content d-flex flex-column h-100">
                                     <h2 class="mb-3 o_text_overflow">
@@ -108,6 +108,43 @@
                                     </div>
                                 </div>
                             </div>
+                            <!-- Card when the Kanban view is not grouped -->
+                            <div class="oe_kanban_global_click o_mailing_list_kanban_ungrouped d-flex gap-1 flex-row justify-content-between align-items-center flex-wrap">
+                                <div class="col-lg-3 col-sm-6 col-12 py-0 my-auto">
+                                    <div class="d-flex text-large">
+                                        <span class="d-inline-block text-truncate fw-normal text-large"
+                                              t-att-title="record.name.value">
+                                            <field name="name"/>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="o_mailing_list_kanban_counts col-lg-1 col-6 my-auto d-flex">
+                                    <div class="d-flex flex-row justify-content-start justify-content-md-end">
+                                        <div class="my-auto p-0">
+                                            <button name="action_view_contacts" type="object"
+                                                class="o_mailing_list_kanban_button o_mailing_list_kanban_big_nb text-primary fw-bold">
+                                                <field name="contact_count"/>
+                                            </button>
+                                        </div>
+                                        <div class="my-auto px-0">
+                                            <button name="action_view_contacts" type="object"
+                                                class="o_mailing_list_kanban_button text-large text-start ms-2">
+                                                Total <br/>Contacts
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="o_kanban_ungrouped_action_buttons order-3 order-lg-4 col-5 col-lg-2 py-0 my-auto d-none d-md-flex flex-wrap justify-content-end gap-1">
+                                    <button name="action_open_import" string="Import Contacts"
+                                        type="object" class="btn btn-secondary text-nowrap">
+                                        Import Contacts
+                                    </button>
+                                    <button name="action_send_campaign" string="Send Campaign"
+                                        type="object" class="btn btn-secondary text-nowrap">
+                                        Send Campaign
+                                    </button>
+                                </div>
+                            </div>
                         </t>
                     </templates>
                 </kanban>
@@ -118,7 +155,7 @@
         <record model="ir.actions.act_window" id="action_whatsapp_mailing_list">
             <field name="name">WhatsApp Lists</field>
             <field name="res_model">whatsapp.mailing.list</field>
-            <field name="view_mode">tree,form,kanban</field>
+            <field name="view_mode">kanban,tree,form</field>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create a WhatsApp Mailing List

@@ -300,12 +300,43 @@
                                      class="message" 
                                      t-att-class="'message-' + message.direction + ' ' + message.type">
                                     <div class="message-bubble">
-                                        <div t-esc="message.content"/>
+                                        <!-- Media Display -->
+                                        <div t-if="message.media_url or message.media or (message.message_type and message.message_type !== 'chat' and message.message_type !== 'text')" class="message-media">
+                                            <img t-if="message.message_type === 'image' or message.type === 'image'" 
+                                                 t-att-src="message.media_url or message.media" 
+                                                 class="message-image"
+                                                 t-att-alt="message.content"/>
+                                            <video t-if="message.message_type === 'video' or message.type === 'video'" 
+                                                   t-att-src="message.media_url or message.media" 
+                                                   controls="controls"
+                                                   class="message-video"/>
+                                            <div t-if="message.message_type === 'document' or message.type === 'document'" 
+                                                 class="message-document">
+                                                <i class="fa fa-file"/>
+                                                <span t-esc="message.fileName or message.content or 'Document'"/>
+                                                <a t-if="message.media_url or message.media" 
+                                                   t-att-href="message.media_url or message.media" 
+                                                   target="_blank"
+                                                   class="download-link">Download</a>
+                                            </div>
+                                            <audio t-if="message.message_type === 'audio' or message.type === 'audio'" 
+                                                   t-att-src="message.media_url or message.media" 
+                                                   controls="controls"
+                                                   class="message-audio"/>
+                                        </div>
+                                        
+                                        <!-- Text Content -->
+                                        <div t-if="message.content" class="message-content" t-esc="message.content"/>
+                                        
+                                        <!-- Timestamp and Ack -->
                                         <div class="message-time">
                                             <span t-esc="formatMessageTime(message.timestamp)"/>
-                                            <!-- <i t-if="message.direction === 'outbound'" 
-                                               class="fa"  
-                                               t-att-class="message.status === 'delivered' ? 'fa-check-double' : 'fa-check'"/> -->
+                                            <span t-if="message.direction === 'outbound' and message.ack >= 1"
+                                                  t-att-style="'color: ' + getAckColor(message) + '; margin-left: 4px; font-size: 12px; font-weight: bold;'">
+                                                <t t-if="message.ack >= 3">✓✓</t>
+                                                <t t-if="message.ack === 2">✓✓</t>
+                                                <t t-if="message.ack === 1">✓</t>
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -313,25 +344,74 @@
 
                             <!-- Message Input - Only show when conversation is selected -->
                             <div t-if="state.selectedConversation" class="message-input-container">
-                                <div class="input-tools">
-                                    <!-- <button class="btn btn-link" t-on-click="toggleEmojiPanel"> -->
-                                    <button class="btn btn-link">
-                                        <i class="fa fa-smile"/>
-                                    </button>
-                                    <!-- <button class="btn btn-link">
-                                        <i class="fa fa-paperclip"/>
-                                    </button> -->
-                                    <!-- <button class="btn btn-link">
-                                        <i class="fa fa-microphone"/>
-                                    </button> -->
+                                <!-- Media Preview Section -->
+                                <div t-if="state.selectedMedia" class="media-preview-container">
+                                    <div class="media-preview-wrapper">
+                                        <!-- Image Preview -->
+                                        <div t-if="state.selectedMedia.type === 'image'" class="media-preview-item">
+                                            <img t-att-src="state.selectedMedia.preview" 
+                                                 class="media-preview-image"
+                                                 alt="Preview"/>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Video Preview -->
+                                        <div t-if="state.selectedMedia.type === 'video'" class="media-preview-item">
+                                            <video t-att-src="state.selectedMedia.preview" 
+                                                   class="media-preview-video"
+                                                   controls="controls"/>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Document/Audio Preview -->
+                                        <div t-if="state.selectedMedia.type === 'document' or state.selectedMedia.type === 'audio'" 
+                                             class="media-preview-item file-preview">
+                                            <div class="file-icon">
+                                                <i t-if="state.selectedMedia.type === 'document'" class="fa fa-file"/>
+                                                <i t-if="state.selectedMedia.type === 'audio'" class="fa fa-music"/>
+                                            </div>
+                                            <div class="file-info">
+                                                <span class="file-name" t-esc="state.selectedMedia.file.name"/>
+                                                <span class="file-size" t-esc="formatFileSize(state.selectedMedia.file.size)"/>
+                                            </div>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
-                                <textarea placeholder="Type a message..."
-                                          t-model="state.messageInput"
-                                          t-on-keypress="event => this.handleKeyPress(event)"
-                                          rows="1"/>
-                                <button class="btn btn-primary send-btn" t-on-click="sendMessage">
-                                    <i class="fa fa-paper-plane"/>
-                                </button>
+                                
+                                <!-- Input Row -->
+                                <div class="input-row">
+                                    <div class="input-tools">
+                                        <button class="btn btn-link">
+                                            <i class="fa fa-smile"/>
+                                        </button>
+                                        <button class="btn btn-link" t-on-click="openMediaSelector">
+                                            <i class="fa fa-paperclip"/>
+                                        </button>
+                                        <input type="file" 
+                                               ref="fileInput" 
+                                               class="whatsapp-file-input"
+                                               style="display: none;"
+                                               t-att-accept="getFileAcceptTypes()"
+                                               t-on-change="(ev) => this.handleFileSelect(ev)"/>
+                                    </div>
+                                    <textarea placeholder="Type a message..."
+                                              t-model="state.messageInput"
+                                              t-on-keypress="event => this.handleKeyPress(event)"
+                                              rows="1"/>
+                                    <button class="btn btn-primary send-btn" 
+                                            t-on-click="sendMessage"
+                                            t-att-disabled="state.mediaUploading">
+                                        <i t-if="state.mediaUploading" class="fa fa-spinner fa-spin"/>
+                                        <i t-if="!state.mediaUploading" class="fa fa-paper-plane"/>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Emoji Panel - Only show when conversation is selected -->
@@ -1058,24 +1138,166 @@
             .message-time {
                 display: flex;
                 align-items: center;
+                justify-content: flex-end;
                 gap: 4px;
                 font-size: 11px;
                 color: #667781;
                 margin-top: 4px;
             }
 
+            /* Message Media Display */
+            .message-media {
+                margin-bottom: 8px;
+            }
+
+            .message-image {
+                max-width: 100%;
+                max-height: 300px;
+                border-radius: 8px;
+                object-fit: cover;
+                display: block;
+            }
+
+            .message-video {
+                max-width: 100%;
+                max-height: 300px;
+                border-radius: 8px;
+                display: block;
+            }
+
+            .message-document {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px;
+                background: rgba(0,0,0,0.05);
+                border-radius: 4px;
+            }
+
+            .message-document i {
+                font-size: 24px;
+                color: #667781;
+            }
+
+            .message-audio {
+                width: 100%;
+                margin: 8px 0;
+            }
+
+            .message-content {
+                margin-top: 4px;
+            }
+
+            .download-link {
+                margin-left: auto;
+                color: #25d366;
+                text-decoration: none;
+                font-size: 12px;
+            }
+
+            .download-link:hover {
+                text-decoration: underline;
+            }
+
+
             .message-input-container {
-                padding: 16px;
                 background: #f0f2f5;
+                border-top: 1px solid #e9edef;
+                flex-shrink: 0;
+                position: sticky;
+                bottom: 0;
+                z-index: 9;
+            }
+
+            /* Media Preview Container */
+            .media-preview-container {
+                padding: 8px 16px;
+                background: #f0f2f5;
+                border-bottom: 1px solid #e9edef;
+            }
+
+            .media-preview-wrapper {
+                position: relative;
+                max-width: 100%;
+            }
+
+            .media-preview-item {
+                position: relative;
+                display: inline-block;
+                max-width: 300px;
+            }
+
+            .media-preview-image {
+                max-width: 100%;
+                max-height: 200px;
+                border-radius: 8px;
+                object-fit: cover;
+            }
+
+            .media-preview-video {
+                max-width: 100%;
+                max-height: 200px;
+                border-radius: 8px;
+            }
+
+            .file-preview {
                 display: flex;
                 align-items: center;
                 gap: 12px;
-                border-top: 1px solid #e9edef;
-                flex-shrink: 0; /* Prevent shrinking */
-                min-height: 72px; /* Ensure minimum height */
-                position: sticky; /* keep composer visible at bottom of chat panel */
-                bottom: 0;
-                z-index: 9;
+                padding: 12px;
+                background: white;
+                border-radius: 8px;
+                border: 1px solid #e9edef;
+            }
+
+            .file-icon {
+                font-size: 32px;
+                color: #667781;
+            }
+
+            .file-info {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .file-name {
+                font-weight: 500;
+                color: #111b21;
+                font-size: 14px;
+            }
+
+            .file-size {
+                font-size: 12px;
+                color: #667781;
+            }
+
+            .remove-media-btn {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(0, 0, 0, 0.6);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 28px;
+                height: 28px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+
+            .remove-media-btn:hover {
+                background: rgba(0, 0, 0, 0.8);
+            }
+
+            .input-row {
+                padding: 16px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
             }
 
             .input-tools {

@@ -35,8 +35,11 @@ class WhatsAppMarketingCampaign(models.Model):
         string='Recipients Model',
         ondelete='cascade',
         required=True,
-        domain=[('is_mailing_enabled', '=', True)],
-        default=lambda self: self.env['ir.model']._get_id('mailing.list'),
+        domain=[
+            ('is_mailing_enabled', '=', True),
+            ('model', 'not in', ['mailing.list', 'mailing.contact'])
+        ],
+        default=lambda self: self.env['ir.model']._get_id('whatsapp.mailing.list'),
         help="Model of the recipients"
     )
     
@@ -65,14 +68,14 @@ class WhatsAppMarketingCampaign(models.Model):
         help="Domain to filter recipients when not using mailing lists"
     )
     
-    mailing_list_ids = fields.Many2many(
-        'mailing.list',
-        'whatsapp_campaign_mailing_list_rel',
-        'campaign_id',
-        'list_id',
-        string='Mailing Lists',
-        help="Mailing lists to send the campaign to (only when Recipients Model is Mailing List)"
-    )
+    # mailing_list_ids = fields.Many2many(
+    #     'mailing.list',
+    #     'whatsapp_campaign_mailing_list_rel',
+    #     'campaign_id',
+    #     'list_id',
+    #     string='Mailing Lists',
+    #     help="Mailing lists to send the campaign to (only when Recipients Model is Mailing List)"
+    # )
     
     whatsapp_list_ids = fields.Many2many(
         'whatsapp.mailing.list',
@@ -83,12 +86,12 @@ class WhatsAppMarketingCampaign(models.Model):
         help="WhatsApp mailing lists to send the campaign to (only when Recipients Model is WhatsApp Mailing List)"
     )
     
-    use_whatsapp_lists = fields.Boolean(
-        string='Use WhatsApp Lists',
-        compute='_compute_use_whatsapp_lists',
-        store=False,
-        help="Whether this campaign uses WhatsApp mailing lists"
-    )
+    # use_whatsapp_lists = fields.Boolean(
+    #     string='Use WhatsApp Lists',
+    #     compute='_compute_use_whatsapp_lists',
+    #     store=False,
+    #     help="Whether this campaign uses WhatsApp mailing lists"
+    # )
     
     from_connection_id = fields.Many2one(
         'whatsapp.connection',
@@ -162,9 +165,7 @@ class WhatsAppMarketingCampaign(models.Model):
         """Compute the real model to use for recipients"""
         for campaign in self:
             if campaign.mailing_model_id:
-                if campaign.mailing_model_id.model == 'mailing.list':
-                    campaign.mailing_model_real = 'mailing.contact'
-                elif campaign.mailing_model_id.model == 'whatsapp.mailing.list':
+                if campaign.mailing_model_id.model == 'whatsapp.mailing.list':
                     campaign.mailing_model_real = 'whatsapp.mailing.contact'
                 else:
                     campaign.mailing_model_real = campaign.mailing_model_id.model
@@ -174,15 +175,9 @@ class WhatsAppMarketingCampaign(models.Model):
     @api.depends('mailing_model_id')
     def _compute_mailing_on_mailing_list(self):
         """Compute if campaign is based on mailing lists"""
-        mailing_list_model_id = self.env['ir.model']._get('mailing.list')
         whatsapp_list_model_id = self.env['ir.model']._get('whatsapp.mailing.list')
         for campaign in self:
-            if mailing_list_model_id and campaign.mailing_model_id == mailing_list_model_id:
-                campaign.mailing_on_mailing_list = True
-            elif whatsapp_list_model_id and campaign.mailing_model_id == whatsapp_list_model_id:
-                campaign.mailing_on_mailing_list = True
-            else:
-                campaign.mailing_on_mailing_list = False
+            campaign.mailing_on_mailing_list = (campaign.mailing_model_id == whatsapp_list_model_id) if whatsapp_list_model_id else False
     
     @api.depends('mailing_model_id')
     def _compute_use_whatsapp_lists(self):
@@ -191,7 +186,7 @@ class WhatsAppMarketingCampaign(models.Model):
         for campaign in self:
             campaign.use_whatsapp_lists = (campaign.mailing_model_id == whatsapp_list_model_id) if whatsapp_list_model_id else False
 
-    @api.depends('mailing_list_ids', 'whatsapp_list_ids', 'mailing_model_id', 'mailing_domain', 'mailing_on_mailing_list', 'use_whatsapp_lists')
+    @api.depends('whatsapp_list_ids', 'mailing_model_id', 'mailing_domain', 'mailing_on_mailing_list')
     def _compute_total_recipients(self):
         """Count unique contacts with phone numbers"""
         for campaign in self:
@@ -201,22 +196,13 @@ class WhatsAppMarketingCampaign(models.Model):
             
             # Get records based on mailing lists or domain
             if campaign.mailing_on_mailing_list:
-                if campaign.use_whatsapp_lists:
-                    if not campaign.whatsapp_list_ids:
-                        campaign.total_recipients = 0
-                        continue
-                    # Get all contacts from selected WhatsApp mailing lists
-                    records = self.env['whatsapp.mailing.contact'].search([
-                        ('list_ids', 'in', campaign.whatsapp_list_ids.ids)
-                    ])
-                else:
-                    if not campaign.mailing_list_ids:
-                        campaign.total_recipients = 0
-                        continue
-                    # Get all contacts from selected mailing lists
-                    records = self.env['mailing.contact'].search([
-                        ('list_ids', 'in', campaign.mailing_list_ids.ids)
-                    ])
+                if not campaign.whatsapp_list_ids:
+                    campaign.total_recipients = 0
+                    continue
+                # Get all contacts from selected WhatsApp mailing lists
+                records = self.env['whatsapp.mailing.contact'].search([
+                    ('list_ids', 'in', campaign.whatsapp_list_ids.ids)
+                ])
             else:
                 # Use domain to get records
                 if not campaign.mailing_domain:
@@ -244,16 +230,16 @@ class WhatsAppMarketingCampaign(models.Model):
         if record._name == 'whatsapp.mailing.contact':
             if hasattr(record, 'mobile') and record.mobile:
                 return record.mobile
-            elif record.partner_id:
-                return record.partner_id.mobile or record.partner_id.phone
+            # elif record.partner_id:
+            #     return record.partner_id.mobile or record.partner_id.phone
         # Try mailing.contact
-        elif record._name == 'mailing.contact':
-            if hasattr(record, 'mobile') and record.mobile:
-                return record.mobile
-            elif hasattr(record, 'phone') and record.phone:
-                return record.phone
-            elif record.partner_id:
-                return record.partner_id.mobile or record.partner_id.phone
+        # elif record._name == 'mailing.contact':
+        #     if hasattr(record, 'mobile') and record.mobile:
+        #         return record.mobile
+            # elif hasattr(record, 'phone') and record.phone:
+            #     return record.phone
+            # elif record.partner_id:
+            #     return record.partner_id.mobile or record.partner_id.phone
         # Try res.partner
         elif record._name == 'res.partner':
             return record.mobile or record.phone
@@ -263,8 +249,8 @@ class WhatsAppMarketingCampaign(models.Model):
                 return record.mobile
             elif hasattr(record, 'phone') and record.phone:
                 return record.phone
-            elif hasattr(record, 'partner_id') and record.partner_id:
-                return record.partner_id.mobile or record.partner_id.phone
+            # elif hasattr(record, 'partner_id') and record.partner_id:
+            #     return record.partner_id.mobile or record.partner_id.phone
         return None
 
     def _get_recipients(self):
@@ -277,20 +263,12 @@ class WhatsAppMarketingCampaign(models.Model):
         
         # Get records based on mailing lists or domain
         if self.mailing_on_mailing_list:
-            if self.use_whatsapp_lists:
-                if not self.whatsapp_list_ids:
-                    return recipients
-                # Get all contacts from selected WhatsApp mailing lists
-                records = self.env['whatsapp.mailing.contact'].search([
-                    ('list_ids', 'in', self.whatsapp_list_ids.ids)
-                ])
-            else:
-                if not self.mailing_list_ids:
-                    return recipients
-                # Get all contacts from selected mailing lists
-                records = self.env['mailing.contact'].search([
-                    ('list_ids', 'in', self.mailing_list_ids.ids)
-                ])
+            if not self.whatsapp_list_ids:
+                return recipients
+            # Get all contacts from selected WhatsApp mailing lists
+            records = self.env['whatsapp.mailing.contact'].search([
+                ('list_ids', 'in', self.whatsapp_list_ids.ids)
+            ])
         else:
             # Use domain to get records
             if not self.mailing_domain:
@@ -324,14 +302,10 @@ class WhatsAppMarketingCampaign(models.Model):
         """Clear mailing lists and domain when model changes"""
         if self.mailing_model_id:
             whatsapp_list_model_id = self.env['ir.model']._get('whatsapp.mailing.list')
-            mailing_list_model_id = self.env['ir.model']._get('mailing.list')
             
             # Clear WhatsApp lists if switching away from whatsapp.mailing.list
             if whatsapp_list_model_id and self.mailing_model_id != whatsapp_list_model_id:
                 self.whatsapp_list_ids = False
-            # Clear email mailing lists if switching away from mailing.list
-            if mailing_list_model_id and self.mailing_model_id != mailing_list_model_id:
-                self.mailing_list_ids = False
             # Clear domain if switching to any mailing list model
             if self.mailing_on_mailing_list:
                 self.mailing_domain = False
@@ -372,8 +346,16 @@ class WhatsAppMarketingCampaign(models.Model):
             raise UserError(_("Please enter campaign body"))
         if not self.mailing_model_id:
             raise UserError(_("Please select a recipients model"))
-        if self.mailing_on_mailing_list and not self.mailing_list_ids:
-            raise UserError(_("Please select mailing lists"))
+        # if self.mailing_on_mailing_list:
+        #     if self.use_whatsapp_lists:
+        #         if not self.whatsapp_list_ids:
+        #             raise UserError(_("Please select WhatsApp mailing lists"))
+        #     else:
+        #         if not self.mailing_list_ids:
+        #             raise UserError(_("Please select mailing lists"))
+        if self.mailing_on_mailing_list:
+            if not self.whatsapp_list_ids:
+                raise UserError(_("Please select WhatsApp mailing lists"))
         if not self.mailing_on_mailing_list and not self.mailing_domain:
             raise UserError(_("Please set a domain to filter recipients"))
         if not self.from_connection_id:
@@ -383,13 +365,16 @@ class WhatsAppMarketingCampaign(models.Model):
         if not self.from_connection_id._check_authorization():
             raise UserError(_("You are not authorized to use this connection."))
         
-        # Get recipients
+        # STEP 1: Ensure socket is connected with selected connection's credentials
+        self._ensure_socket_connected(context_name="Campaign")
+        
+        # STEP 2: Get recipients and send messages (socket should be ready for QR events)
         recipients = self._get_recipients()
         if not recipients:
             raise UserError(_("No valid phone numbers found in selected mailing lists"))
         
         # Update state
-        self.write({'state': 'sending', 'sent_count': 0, 'failed_count': 0})
+        # self.write({'state': 'sending', 'sent_count': 0, 'failed_count': 0})
         
         # Send to first recipient to check authentication
         first_result = self._send_to_recipient_via_api(
@@ -458,8 +443,17 @@ class WhatsAppMarketingCampaign(models.Model):
             self.write({'state': 'draft'})
             raise UserError(_("Failed to send: %s") % first_result.get('error', 'Unknown error'))
 
-    def _send_to_recipient_via_api(self, phone, contact_name, body, attachments):
-        """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed"""
+    def _send_to_recipient_via_api(self, phone, contact_name, body, attachments, test_wizard_id=None, test_phone_to=None):
+        """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed
+        
+        Args:
+            phone: Phone number to send to
+            contact_name: Name of the contact
+            body: Message body
+            attachments: Attachments to send
+            test_wizard_id: Optional ID of test wizard if this is a test send
+            test_phone_to: Optional test phone number to store in QR popup (for resend if wizard is closed)
+        """
         self.ensure_one()
         
         raw_phone = phone or ''
@@ -496,7 +490,58 @@ class WhatsAppMarketingCampaign(models.Model):
             
             api_url = "http://localhost:3000/api/whatsapp/send"
             has_attachments = bool(attachments)
-            message_type = 'document' if has_attachments else 'chat'
+            
+            # Determine message type and file type handling based on backend requirements
+            # Backend accepts: chat, image, video, document, audio, vcard, multi_vcard, location
+            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.webp', '.ico', '.heic'}
+            video_extensions = {'.mp4', '.webm', '.ogv', '.avi', '.mov', '.wmv', '.mkv', '.flv', '.3gp'}
+            audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.mid', '.midi'}
+            document_extensions = {
+                '.txt', '.csv', '.html', '.css', '.js', '.json', '.xml', '.md', '.yml', '.yaml', '.pdf', 
+                '.zip', '.rar', '.7z', '.tar', '.gz', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
+                '.odt', '.ods', '.odp', '.odg', '.py', '.java', '.c', '.cpp', '.sh', '.php', '.rb', '.sql', 
+                '.ics', '.vcard', '.vcf', '.ttf', '.otf', '.woff', '.woff2', '.deb', '.rpm', '.apk', '.dmg', 
+                '.pkg', '.bin', '.wasm'
+            }
+            
+            message_type = 'chat'
+            file_type = None
+            
+            if has_attachments:
+                # Check first attachment to determine type
+                attachment = attachments[0]
+                filename = (attachment.name or 'attachment').lower()
+                
+                # Extract file extension
+                if '.' in filename:
+                    file_ext = '.' + filename.rsplit('.', 1)[1]
+                else:
+                    file_ext = None
+                
+                # Determine message type based on file extension
+                if file_ext in image_extensions:
+                    message_type = 'image'
+                elif file_ext in video_extensions:
+                    message_type = 'video'
+                elif file_ext in audio_extensions:
+                    message_type = 'audio'
+                elif file_ext in document_extensions:
+                    message_type = 'document'
+                    # Extract fileType for documents (without the dot)
+                    file_type = file_ext[1:].lower()  # Remove dot and lowercase
+                else:
+                    # Try to infer from mimetype
+                    mimetype = (getattr(attachment, 'mimetype', '') or '').lower()
+                    if any(img in mimetype for img in ['image', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']):
+                        message_type = 'image'
+                    elif any(vid in mimetype for vid in ['video', 'mp4', 'webm', 'avi', 'mov']):
+                        message_type = 'video'
+                    elif any(aud in mimetype for aud in ['audio', 'mp3', 'wav', 'ogg', 'm4a']):
+                        message_type = 'audio'
+                    else:
+                        # Default to document with bin fileType
+                        message_type = 'document'
+                        file_type = 'bin'
             
             if has_attachments:
                 # Build multipart form with files
@@ -533,6 +578,10 @@ class WhatsAppMarketingCampaign(models.Model):
                     'messageType': message_type,
                     'body': plain_text,
                 }
+                
+                # Add fileType parameter only for documents
+                if message_type == 'document' and file_type:
+                    form_data['fileType'] = file_type
                 
                 response = requests.post(
                     api_url,
@@ -574,19 +623,27 @@ class WhatsAppMarketingCampaign(models.Model):
                         if qr_code_base64:
                             qr_code_base64 = f"data:image/png;base64,{qr_code_base64}"
                     
-                    qr_popup = self.env['whatsapp.qr.popup'].create({
+                    qr_popup_vals = {
                         'qr_code_image': qr_code_base64,
                         'qr_code_filename': 'whatsapp_qr_code.png',
                         'from_number': self.from_connection_id.from_field,
                         'from_name': self.from_connection_id.name,
-                        'original_campaign_id': self.id,
                         'message': response_data.get('message', 'Please scan QR code to connect WhatsApp'),
                         'api_key': self.from_connection_id.api_key,
                         'phone_number': self.from_connection_id.from_field,
                         'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
                         'countdown_seconds': 120,
                         'is_expired': False,
-                    })
+                    }
+                    # Set appropriate original ID based on context
+                    if test_wizard_id:
+                        qr_popup_vals['original_test_wizard_id'] = test_wizard_id
+                        qr_popup_vals['test_phone_to'] = test_phone_to or phone
+                        qr_popup_vals['test_campaign_id'] = self.id
+                    else:
+                        qr_popup_vals['original_campaign_id'] = self.id
+                    
+                    qr_popup = self.env['whatsapp.qr.popup'].create(qr_popup_vals)
                     
                     return {
                         'qr_popup_needed': True,
@@ -724,6 +781,56 @@ class WhatsAppMarketingCampaign(models.Model):
             pass
         return origin
 
+    def _ensure_socket_connected(self, connection=None, context_name="Campaign", max_wait=2):
+        """Ensure socket is connected with the given connection's credentials
+        
+        Args:
+            connection: WhatsApp connection to use (defaults to self.from_connection_id)
+            context_name: Name for logging context (e.g., "Campaign", "Test", "Test Resend")
+            max_wait: Maximum seconds to wait for socket confirmation (default: 2)
+        
+        Returns:
+            bool: True if socket confirmed, False if timeout
+        """
+        if not connection:
+            connection = self.from_connection_id
+        
+        if not connection:
+            _logger.warning(f"[{context_name}] No connection provided, skipping socket check")
+            return False
+        
+        # Get origin from request (for socket matching)
+        origin = self._get_origin()
+        
+        # Trigger socket connection
+        connection._trigger_socket_connection(origin)
+        
+        # Clear and wait for confirmation
+        connection.socket_connection_ready = False
+        connection.env.cr.commit()
+        
+        # Wait for socket connection
+        check_interval = 0.1
+        waited = 0
+        
+        socket_confirmed = False
+        while waited < max_wait:
+            fresh_env = connection.env(cr=connection.env.cr)
+            fresh_record = fresh_env['whatsapp.connection'].browse(connection.id)
+            fresh_record.invalidate_recordset(['socket_connection_ready'])
+            
+            if fresh_record.socket_connection_ready:
+                socket_confirmed = True
+                _logger.info(f"[{context_name}] Socket confirmed connected after {waited:.1f}s")
+                break
+            time.sleep(check_interval)
+            waited += check_interval
+        
+        if not socket_confirmed:
+            _logger.warning(f"[{context_name}] Socket not confirmed within {max_wait}s, proceeding anyway")
+        
+        return socket_confirmed
+
 
 class WhatsAppMarketingCampaignTest(models.TransientModel):
     _name = 'whatsapp.marketing.campaign.test'
@@ -767,12 +874,20 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
         if not self.phone_to:
             raise UserError(_("Please enter a phone number"))
         
+        # Ensure socket is connected before sending test
+        self.campaign_id._ensure_socket_connected(
+            connection=self.campaign_id.from_connection_id,
+            context_name="Test"
+        )
+        
         # Send test message
         result = self.campaign_id._send_to_recipient_via_api(
             self.phone_to.strip(),
             'Test Recipient',
             self.campaign_id.body,
-            self.campaign_id.attachment_ids
+            self.campaign_id.attachment_ids,
+            test_wizard_id=self.id,
+            test_phone_to=self.phone_to.strip()
         )
         
         if result.get('qr_popup_needed'):
@@ -799,3 +914,93 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
         else:
             raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
 
+    def resend_test(self, popup=False):
+        """Resend test message after QR authentication"""
+        self.ensure_one()
+        
+        if not self.campaign_id.body:
+            raise UserError(_("Please enter campaign body in the campaign"))
+        
+        if not self.campaign_id.from_connection_id:
+            raise UserError(_("Please select a connection in the campaign"))
+        
+        if not self.phone_to:
+            raise UserError(_("Please enter a phone number"))
+        
+        # Ensure socket is connected (in case connection changed after QR scan)
+        self.campaign_id._ensure_socket_connected(
+            connection=self.campaign_id.from_connection_id,
+            context_name="Test Resend"
+        )
+        
+        # Send test message again
+        result = self.campaign_id._send_to_recipient_via_api(
+            self.phone_to.strip(),
+            'Test Recipient',
+            self.campaign_id.body,
+            self.campaign_id.attachment_ids,
+            test_wizard_id=self.id,
+            test_phone_to=self.phone_to.strip()
+        )
+        
+        # if result.get('success'):
+        #     return {
+        #         'type': 'ir.actions.client',
+        #         'tag': 'display_notification',
+        #         'params': {
+        #             'title': _('Test Sent'),
+        #             'message': _('Test message sent to %s') % self.phone_to,
+        #             'type': 'success',
+        #         }
+        #     }
+        # else:
+        #     raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
+        if result.get('success'):
+            # Send bus notification to close popup (like campaign does)
+            popup_id = popup.id if popup else (
+                self.env['whatsapp.qr.popup'].search([
+                    ('original_test_wizard_id', '=', self.id)
+                ], order='create_date desc', limit=1).id or 0
+            )
+            
+            message = _("Test message sent to %s") % self.phone_to
+            notif_type = "success"
+            
+            payload = {
+                'action': 'close',
+                'popup_id': popup_id,
+                'title': _('WhatsApp Test'),
+                'message': message,
+                'type': notif_type,
+                'sticky': False,
+                'success': True
+            }
+            
+            dbname = self._cr.dbname
+            popup_channel = f"{dbname}_qr_popup_{popup_id}"
+            self.env['bus.bus']._sendone(
+                popup_channel,
+                'qr_popup_close',
+                payload
+            )
+            
+            current_user = self.env.user
+            if current_user and current_user.partner_id:
+                self.env['bus.bus']._sendone(
+                    current_user.partner_id,
+                    'qr_popup_close',
+                    payload
+                )
+            
+            # Return notification action
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Test Sent'),
+                    'message': message,
+                    'type': 'success',
+                }
+            }
+        else:
+            raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
