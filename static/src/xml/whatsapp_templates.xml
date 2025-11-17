@@ -296,9 +296,24 @@
                                     <small>Send a message to start the conversation</small>
                                 </div>
 
-                                <div t-foreach="state.messages" t-as="message" t-key="message.id" 
-                                     class="message" 
-                                     t-att-class="'message-' + message.direction + ' ' + message.type">
+                                <t t-foreach="state.messages" t-as="message" t-key="message.id">
+                                    <t t-if="message.showDayDivider">
+                                        <div class="day-separator">
+                                            <span t-esc="message.dayLabel"/>
+                                        </div>
+                                    </t>
+                                    <div class="message" 
+                                         t-att-class="'message-' + message.direction + ' ' + message.type">
+                                        <t t-if="message.direction === 'inbound'">
+                                            <div class="lead-action-container">
+                                                <button class="lead-action-btn"
+                                                        title="Create CRM Lead"
+                                                        t-on-click="() => this.createLeadFromMessage(message)">
+                                                        Create Lead
+                                                    <i class="fa fa-user-plus"/>
+                                                </button>
+                                            </div>
+                                        </t>
                                     <div class="message-bubble">
                                         <!-- Media Display -->
                                         <div t-if="message.media_url or message.media or (message.message_type and message.message_type !== 'chat' and message.message_type !== 'text')" class="message-media">
@@ -338,8 +353,9 @@
                                                 <t t-if="message.ack === 1">✓</t>
                                             </span>
                                         </div>
+                                        </div>
                                     </div>
-                                </div>
+                                </t>
                             </div>
 
                             <!-- Message Input - Only show when conversation is selected -->
@@ -1111,7 +1127,8 @@
             .message {
                 display: flex;
                 margin-bottom: 8px;
-                max-width: 70%;
+                max-width: 50%;
+                position: relative;
             }
 
             .message-inbound {
@@ -1143,6 +1160,60 @@
                 font-size: 11px;
                 color: #667781;
                 margin-top: 4px;
+            }
+            
+             .lead-action-container {
+                position: static;
+                margin-left: 12px;
+                opacity: 1;
+                display: flex;
+                align-items: center;
+            }
+
+            .message-inbound:hover .lead-action-container {
+                opacity: 1;
+            }
+
+            .lead-action-btn {
+                border: none;
+                background: #ffffff;
+                color: #25d366;
+                padding: 6px 16px;
+                border-radius: 999px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-weight: 600;
+                font-size: 13px;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+
+            .lead-action-btn i {
+                font-size: 14px;
+            }
+
+            @media (max-width: 768px) {
+                .lead-action-container {
+                    right: -30px;
+                }
+            }
+            
+            .day-separator {
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                margin: 16px 0;
+            }
+
+            .day-separator span {
+                padding: 4px 12px;
+                background: rgba(0, 0, 0, 0.08);
+                border-radius: 16px;
+                color: #54656f;
+                font-size: 12px;
+                text-transform: capitalize;
             }
 
             /* Message Media Display */

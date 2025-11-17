@@ -79,6 +79,7 @@ export class WhatsAppWebClientAction extends Component {
         
         // Scroll handler debounce
         this._scrollDebounceTimer = null;
+        this._creatingLeadMessageId = null;
         
         console.log("[WA][Action] ===== WhatsApp Web Client Action Initialized =====");
         console.log("[WA][Action] Starting to load connections and credentials...");
@@ -432,8 +433,10 @@ export class WhatsAppWebClientAction extends Component {
             } else {
                 console.log("[WA][Action] No default connection found in database");
                 if (connections.length > 0) {
-                    console.log("[WA][Action] Prompting user to select a connection");
-                    this.state.showConnectionSelector = true;
+                    // Auto-select first available connection instead of showing popup
+                    const firstConnection = connections[0];
+                    console.log("[WA][Action] Auto-selecting first available connection:", firstConnection.name);
+                    await this.selectConnection(firstConnection.id);
                 } else {
                     console.warn("[WA][Action] ⚠️ No connections available");
                     // Show error message in UI
@@ -1039,15 +1042,20 @@ export class WhatsAppWebClientAction extends Component {
                     ack: ack,
                     timestamp: (m.timestamp || m.createdAt || m.time),
                     type: (m.messageType || m.type || 'text'),
+                    fileName: m.fileName || m.filename || null,
+                    mimeType: m.mimeType || null,
                 };
             });
 
             // Sort ascending so latest appears at the bottom
             const sortAsc = (arr) => arr.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
 
+            const scrollState = reset ? null : this.captureScrollState();
+            
             if (reset || pageIndex === 1) {
                 // First load: replace and scroll to bottom
                 this.state.messages = sortAsc(mapped);
+                this.decorateMessagesWithDaySeparators();
                 // Populate message ID set (Option B)
                 this._messageIdSet.clear();
                 this.state.messages.forEach(msg => {
@@ -1057,6 +1065,7 @@ export class WhatsAppWebClientAction extends Component {
                 // Load older: prepend in ascending order before current list
                 const olderAsc = sortAsc(mapped);
                 this.state.messages = [...olderAsc, ...this.state.messages];
+                this.decorateMessagesWithDaySeparators();
                 // Add older message IDs to set
                 olderAsc.forEach(msg => {
                     if (msg.id) this._messageIdSet.add(msg.id);
@@ -1077,13 +1086,9 @@ export class WhatsAppWebClientAction extends Component {
             this.state.messagePagination.isLoadingMore = false;
             this._lastMessagesFetchTs = Date.now();
 
-            // Optionally, keep scroll position when prepending older messages
+            // Preserve scroll position when prepending older messages
             if (!reset) {
-                const container = this.refs?.messagesContainer;
-                if (container) {
-                    // Nudge down slightly to avoid jump; a full preservation would need height diff calc
-                    container.scrollTop = 10;
-                }
+                this.restoreScrollPosition(scrollState);
             }
             // After first page load, ensure view is scrolled to the most recent message at bottom
             if (reset) {
@@ -1181,35 +1186,34 @@ export class WhatsAppWebClientAction extends Component {
         this.state.messageInput = "";
         this.removeSelectedMedia();
         
-        // Create optimistic message
-        const tempMessageId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const messageType = selectedMedia ? selectedMedia.type : 'chat';
-        
-        const optimisticMessage = {
-            id: tempMessageId,
-            content: originalMessage || (selectedMedia ? selectedMedia.file.name : ''),
-            direction: 'outbound',
-            msg_timestamp: new Date().toISOString(),
-            message_type: messageType,
-            status: 'pending',
-            ack: 0,
-            timestamp: new Date().toISOString(),
-            type: messageType,
-            media_url: selectedMedia?.preview || null,
-            media_type: selectedMedia?.type || null,
-            fileName: selectedMedia?.file.name || null
-        };
-        
-        this.state.messages.push(optimisticMessage);
-        this._messageIdSet.add(tempMessageId);
-        
-        // Scroll to bottom
-        setTimeout(() => {
-            const container = this.refs?.messagesContainer;
-            if (container) {
-                try { container.scrollTop = container.scrollHeight; } catch (e) {}
-            }
-        }, 0);
+        console.log("messageType",messageType)
+        // OPTIMISTIC MESSAGE CODE (COMMENTED OUT - using socket events instead)
+        // // Create optimistic message
+        // const tempMessageId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // const optimisticMessage = {
+        //     id: tempMessageId,
+        //     content: originalMessage || (selectedMedia ? selectedMedia.file.name : ''),
+        //     direction: 'outbound',
+        //     msg_timestamp: new Date().toISOString(),
+        //     message_type: messageType,
+        //     status: 'pending',
+        //     ack: 0,
+        //     timestamp: new Date().toISOString(),
+        //     type: messageType,
+        //     media_url: selectedMedia?.preview || null,
+        //     media_type: selectedMedia?.type || null,
+        //     fileName: selectedMedia?.file.name || null
+        // };
+        // this.state.messages.push(optimisticMessage);
+        // this._messageIdSet.add(tempMessageId);
+        // // Scroll to bottom
+        // setTimeout(() => {
+        //     const container = this.refs?.messagesContainer;
+        //     if (container) {
+        //         try { container.scrollTop = container.scrollHeight; } catch (e) {}
+        //     }
+        // }, 0);
         
         try {
             this.state.mediaUploading = true;
@@ -1263,14 +1267,15 @@ export class WhatsAppWebClientAction extends Component {
             }
             
             if (!response.ok || !result?.success) {
-                // Remove optimistic message on error
-                const messageIndex = this.state.messages.findIndex(m => m.id === tempMessageId);
-                if (messageIndex >= 0) {
-                    this.state.messages.splice(messageIndex, 1);
-                    this._messageIdSet.delete(tempMessageId);
-                }
+                // OPTIMISTIC MESSAGE REMOVAL (COMMENTED OUT - no optimistic messages)
+                // // Remove optimistic message on error
+                // const messageIndex = this.state.messages.findIndex(m => m.id === tempMessageId);
+                // if (messageIndex >= 0) {
+                //     this.state.messages.splice(messageIndex, 1);
+                //     this._messageIdSet.delete(tempMessageId);
+                // }
                 
-                // Restore input and media
+                // Restore input and media on error
                 this.state.messageInput = originalMessage;
                 if (selectedMedia) {
                     this.state.selectedMedia = selectedMedia;
@@ -1281,8 +1286,7 @@ export class WhatsAppWebClientAction extends Component {
             
             console.log("[WA][Action] ✅ Message sent successfully:", result);
             
-            // Note: The actual message will arrive via socket event and replace the optimistic one
-            // We keep the optimistic message for now, socket handler will dedupe by real message ID
+            // Note: The actual message will arrive via socket event and be added to the UI
             
             // Update chat metadata (last message)
             const chatIndex = this._conversationMap.get(selected.conversation_id);
@@ -1290,7 +1294,7 @@ export class WhatsAppWebClientAction extends Component {
                 const chat = this.state.conversations[chatIndex];
                 chat.last_message_content = originalMessage || (selectedMedia ? selectedMedia.file.name : '');
                 chat.last_message_type = messageType;
-                chat.last_activity = optimisticMessage.timestamp;
+                chat.last_activity = new Date().toISOString();
                 
                 // Move chat to top if not already
                 if (chatIndex !== 0) {
@@ -1312,7 +1316,7 @@ export class WhatsAppWebClientAction extends Component {
             console.error("[WA][Action] Error details:", error.message, error.stack);
             
             // Show error to user (you can add a toast/notification here)
-            // For now, we just log it - input was already cleared, optimistic message was removed
+            // For now, we just log it - input was already cleared
         }
     }
     
@@ -1343,6 +1347,93 @@ export class WhatsAppWebClientAction extends Component {
         if (!dateString) return "";
         const date = new Date(dateString);
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    formatDayLabel(date) {
+        if (!date || isNaN(date)) return "";
+        const today = new Date();
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const dateStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const diffDays = Math.round((todayStart - dateStart) / 86400000);
+        
+        if (diffDays === 0) return "Today";
+        if (diffDays === 1) return "Yesterday";
+        if (diffDays < 7) {
+            return date.toLocaleDateString(undefined, { weekday: 'long' });
+        }
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+    }
+    
+    decorateMessagesWithDaySeparators() {
+        if (!Array.isArray(this.state.messages) || !this.state.messages.length) {
+            return;
+        }
+        let lastDayKey = null;
+        this.state.messages.forEach((msg) => {
+            const timestamp = msg.timestamp || msg.msg_timestamp;
+            if (!timestamp) {
+                msg.showDayDivider = false;
+                msg.dayLabel = "";
+                return;
+            }
+            const date = new Date(timestamp);
+            if (isNaN(date)) {
+                msg.showDayDivider = false;
+                msg.dayLabel = "";
+                return;
+            }
+            const dayKey = date.toISOString().slice(0, 10);
+            if (dayKey !== lastDayKey) {
+                msg.showDayDivider = true;
+                msg.dayLabel = this.formatDayLabel(date);
+                lastDayKey = dayKey;
+            } else {
+                msg.showDayDivider = false;
+            }
+        });
+    }
+    
+    captureScrollState() {
+        const container = this.refs?.messagesContainer || document.querySelector('.messages-container');
+        if (!container) {
+            console.warn("[WA][Action] ⚠️ captureScrollState: messages container not found");
+            return null;
+        }
+        const state = {
+            scrollHeight: container.scrollHeight,
+            scrollTop: container.scrollTop,
+        };
+        console.log("[WA][Action] 📏 Captured scroll state:", state);
+        return state;
+    }
+    
+    restoreScrollPosition(scrollState) {
+        if (!scrollState) {
+            return;
+        }
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                const container = this.refs?.messagesContainer || document.querySelector('.messages-container');
+                if (!container) {
+                    console.warn("[WA][Action] ⚠️ restoreScrollPosition: messages container not found");
+                    return;
+                }
+                const newScrollHeight = container.scrollHeight;
+                const diff = newScrollHeight - scrollState.scrollHeight;
+                if (diff <= 0) {
+                    console.log("[WA][Action] 📏 No scroll adjustment needed (diff <= 0)", { diff });
+                    return;
+                }
+                container.scrollTop = scrollState.scrollTop + diff;
+                console.log("[WA][Action] 📐 Restored scroll position:", {
+                    previousScrollTop: scrollState.scrollTop,
+                    newScrollHeight,
+                    diff,
+                    newScrollTop: container.scrollTop,
+                });
+            });
+        });
     }
     
     getAckColor(message) {
@@ -1446,6 +1537,48 @@ export class WhatsAppWebClientAction extends Component {
         const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+    
+    async createLeadFromMessage(message) {
+        if (!message || message.direction !== 'inbound') {
+            return;
+        }
+        if (!this.state.selectedConversation) {
+            console.warn("[WA][Action] ⚠️ Cannot create lead: no conversation selected");
+            return;
+        }
+        if (this._creatingLeadMessageId === message.id) {
+            return;
+        }
+        
+        const conversation = this.state.selectedConversation;
+        const payload = {
+            message_id: message.id,
+            message_content: message.content || '',
+            message_type: message.message_type || message.type || 'text',
+            timestamp: message.timestamp || message.msg_timestamp || null,
+            message_direction: message.direction,
+            contact_name: conversation.contact_name || conversation.name || '',
+            contact_phone: conversation.contact_phone || '',
+            conversation_id: conversation.conversation_id || conversation.id || null,
+        };
+        
+        this._creatingLeadMessageId = message.id;
+        try {
+            console.log("[WA][Action] 🧩 Creating lead from message:", payload);
+            const action = await this.rpc('/whatsapp/create_lead_action', payload);
+            if (action) {
+                await this.actionService.doAction(action);
+            } else {
+                console.warn("[WA][Action] ⚠️ Lead creation action not returned");
+            }
+        } catch (error) {
+            console.error("[WA][Action] ❌ Failed to create lead from message:", error);
+        } finally {
+            if (this._creatingLeadMessageId === message.id) {
+                this._creatingLeadMessageId = null;
+            }
+        }
     }
     
     async uploadMedia(file, mediaType) {
@@ -1796,43 +1929,52 @@ export class WhatsAppWebClientAction extends Component {
             ack: ack,
             timestamp: (msg.timestamp || msg.createdAt || msg.time),
             type: (msg.messageType || msg.type || 'text'),
+            fileName: msg.fileName || msg.filename || null,
+            mimeType: msg.mimeType || null,
         };
         
         // If message belongs to currently open conversation, append if not exists
         if (isSelected) {
             if (!this._messageIdSet.has(msgId)) {
-                // Check if we have an optimistic message (temp ID) for this message
-                // Match by content and direction for outbound messages
-                if (mappedMessage.direction === 'outbound') {
-                    const optimisticIndex = this.state.messages.findIndex(m => 
-                        m.id && m.id.startsWith('temp_') && 
-                        m.content === mappedMessage.content &&
-                        m.direction === 'outbound'
-                    );
-                    
-                    if (optimisticIndex >= 0) {
-                        // Replace optimistic message with real one
-                        const tempId = this.state.messages[optimisticIndex].id;
-                        this.state.messages[optimisticIndex] = mappedMessage;
-                        this._messageIdSet.delete(tempId);
-                        this._messageIdSet.add(msgId);
-                        
-                        console.log("[WA][Action] ✅ Replaced optimistic message with real message:", msgId);
-                    } else {
-                        // Add new message
-                        this.state.messages.push(mappedMessage);
-                        this._messageIdSet.add(msgId);
-                        console.log("[WA][Action] ✅ Appended message to open chat:", msgId);
-                    }
-                } else {
-                    // Inbound message - just add it
-                    this.state.messages.push(mappedMessage);
-                    this._messageIdSet.add(msgId);
-                    console.log("[WA][Action] ✅ Appended inbound message to open chat:", msgId);
-                }
+                // OPTIMISTIC MESSAGE MATCHING (COMMENTED OUT - no optimistic messages)
+                // // Check if we have an optimistic message (temp ID) for this message
+                // // Match by content and direction for outbound messages
+                // if (mappedMessage.direction === 'outbound') {
+                //     const optimisticIndex = this.state.messages.findIndex(m => 
+                //         m.id && m.id.startsWith('temp_') && 
+                //         m.content === mappedMessage.content &&
+                //         m.direction === 'outbound'
+                //     );
+                //     
+                //     if (optimisticIndex >= 0) {
+                //         // Replace optimistic message with real one
+                //         const tempId = this.state.messages[optimisticIndex].id;
+                //         this.state.messages[optimisticIndex] = mappedMessage;
+                //         this._messageIdSet.delete(tempId);
+                //         this._messageIdSet.add(msgId);
+                //         
+                //         console.log("[WA][Action] ✅ Replaced optimistic message with real message:", msgId);
+                //     } else {
+                //         // Add new message
+                //         this.state.messages.push(mappedMessage);
+                //         this._messageIdSet.add(msgId);
+                //         console.log("[WA][Action] ✅ Appended message to open chat:", msgId);
+                //     }
+                // } else {
+                //     // Inbound message - just add it
+                //     this.state.messages.push(mappedMessage);
+                //     this._messageIdSet.add(msgId);
+                //     console.log("[WA][Action] ✅ Appended inbound message to open chat:", msgId);
+                // }
+                
+                // Just add the message from socket event
+                this.state.messages.push(mappedMessage);
+                this._messageIdSet.add(msgId);
+                console.log("[WA][Action] ✅ Appended message to open chat:", msgId);
                 
                 // Re-sort to ensure chronological order (oldest->newest)
                 this.state.messages.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+                this.decorateMessagesWithDaySeparators();
                 
                 // Auto-scroll to bottom if user is near bottom
                 const container = this.refs?.messagesContainer;
