@@ -12,6 +12,7 @@
                   name="📱 WhatsApp Web" 
                   action="action_whatsapp_web"
                   parent="menu_whatsapp_chat_root"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="1"/>
 
         <!-- Conversations -->
@@ -38,14 +39,16 @@
         <!-- Settings Submenu (Under Settings > Technical) -->
         <menuitem id="menu_whatsapp_settings" 
                   name="WhatsApp Settings" 
-                  parent="base.menu_custom" 
+                  parent="base.menu_custom"
+                  groups="whatsapp_chat_module.group_whatsapp_admin"
                   sequence="100"/>
 
         <!-- Connection Menu -->
         <menuitem id="menu_whatsapp_connection" 
                   name="Connection" 
                   parent="menu_whatsapp_settings" 
-                  action="action_whatsapp_connection" 
+                  action="action_whatsapp_connection"
+                  groups="whatsapp_chat_module.group_whatsapp_admin"
                   sequence="10"/>
 
         <!-- API Service Menu -->
@@ -63,39 +66,45 @@
                   sequence="30"/> -->
 
         <!-- WhatsApp Templates Menu -->
-        <menuitem id="menu_whatsapp_template" 
+        <menuitem id="menu_whatsapp_template_settings" 
                   name="WhatsApp Template" 
-                  parent="menu_whatsapp_settings" 
+                  parent="menu_whatsapp_settings"
+                  groups="whatsapp_chat_module.group_whatsapp_admin"
                   action="action_whatsapp_template" 
                   sequence="40"/>
 
         <menuitem id="menu_whatsapp_configuration"
                   name="Configuration"
                   parent="menu_whatsapp_chat_root"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="90"/>
 
-        <menuitem id="menu_whatsapp_template" 
+        <menuitem id="menu_whatsapp_template_config" 
                   name="WhatsApp Template" 
                   parent="menu_whatsapp_configuration" 
-                  action="action_whatsapp_template" 
+                  action="action_whatsapp_template"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="10"/>
 
         <menuitem id="menu_whatsapp_marketing"
                   name="WhatsApp Marketing"
                   parent="menu_whatsapp_configuration"
                   action="action_whatsapp_marketing_campaign"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="20"/>
 
         <menuitem id="menu_whatsapp_mailing_lists"
                   name="WhatsApp Lists"
                   parent="menu_whatsapp_configuration"
                   action="action_whatsapp_mailing_list"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="30"/>
 
         <menuitem id="menu_whatsapp_mailing_contacts"
                   name="WhatsApp Contacts"
                   parent="menu_whatsapp_configuration"
                   action="action_whatsapp_mailing_contact"
+                  groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="40"/>
     </data>
 </odoo>

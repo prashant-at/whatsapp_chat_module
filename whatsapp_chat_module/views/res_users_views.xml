@@ -11,9 +11,11 @@
                
             </xpath> -->
             
-            <!-- Add WhatsApp Connections tab -->
+            <!-- Add WhatsApp Connections tab - Admin only -->
             <xpath expr="//notebook" position="inside">
-                <page string="WhatsApp Connections" name="whatsapp_connections">
+                <page string="WhatsApp Connections" 
+                      name="whatsapp_connections"
+                      groups="whatsapp_chat_module.group_whatsapp_admin">
                     <group>
                         <group>
                        <field name="whatsapp_default_connection_id" 

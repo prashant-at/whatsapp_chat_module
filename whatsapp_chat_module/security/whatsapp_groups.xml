@@ -1,11 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- WhatsApp Send Access Group -->
-    <!-- This group appears in Technical section as a checkbox -->
-    <record id="group_whatsapp_send" model="res.groups">
-        <field name="name">Send WhatsApp</field>
-        <field name="category_id" ref="base.module_category_hidden"/>
-        <field name="comment">Allow user to send WhatsApp messages via the WhatsApp Chat button</field>
+    <!-- Create custom category for WhatsApp groups -->
+    <record id="module_category_whatsapp" model="ir.module.category">
+        <field name="name">WhatsApp</field>
+        <field name="sequence">100</field>
+    </record>
+
+    <!-- WhatsApp User Group - Send Only -->
+    <record id="group_whatsapp_user" model="res.groups">
+        <field name="name">WhatsApp User</field>
+        <field name="category_id" ref="whatsapp_chat_module.module_category_whatsapp"/>
+        <field name="comment">Can send WhatsApp messages via compose wizard. Cannot access WhatsApp Web interface or configuration menus.</field>
+    </record>
+
+    <!-- WhatsApp Manager Group - Web Interface + Configuration -->
+    <record id="group_whatsapp_manager" model="res.groups">
+        <field name="name">WhatsApp Manager</field>
+        <field name="category_id" ref="whatsapp_chat_module.module_category_whatsapp"/>
+        <field name="implied_ids" eval="[(4, ref('whatsapp_chat_module.group_whatsapp_user'))]"/>
+        <field name="comment">Can access WhatsApp Web interface, manage campaigns, templates, and mailing lists. Cannot manage connections.</field>
+    </record>
+
+    <!-- WhatsApp Administrator Group - Full Access -->
+    <record id="group_whatsapp_admin" model="res.groups">
+        <field name="name">WhatsApp Administrator</field>
+        <field name="category_id" ref="whatsapp_chat_module.module_category_whatsapp"/>
+        <field name="implied_ids" eval="[(4, ref('whatsapp_chat_module.group_whatsapp_manager'))]"/>
+        <field name="comment">Full access: create/edit connections, manage all WhatsApp features, and access user WhatsApp Connections tab.</field>
     </record>
 </odoo>
 

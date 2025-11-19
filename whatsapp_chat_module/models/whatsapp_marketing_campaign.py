@@ -23,18 +23,17 @@ class WhatsAppMarketingCampaign(models.Model):
     _order = 'create_date DESC'
     _rec_name = 'name'
 
-    name = fields.Char('Campaign Name', required=True, tracking=True)
+    name = fields.Char('Campaign Name', tracking=True)
     state = fields.Selection([
         ('draft', 'Draft'),
         ('sending', 'Sending'),
         ('sent', 'Sent')
-    ], string='Status', default='draft', required=True, tracking=True)
+    ], string='Status', default='draft', tracking=True)
     
     mailing_model_id = fields.Many2one(
         'ir.model',
         string='Recipients Model',
         ondelete='cascade',
-        required=True,
         domain=[
             ('is_mailing_enabled', '=', True),
             ('model', 'not in', ['mailing.list', 'mailing.contact'])
@@ -96,7 +95,6 @@ class WhatsAppMarketingCampaign(models.Model):
     from_connection_id = fields.Many2one(
         'whatsapp.connection',
         string='From Connection',
-        required=True,
         domain=lambda self: self._get_authorized_connection_domain(),
         help="WhatsApp connection to send messages from"
     )
@@ -144,7 +142,7 @@ class WhatsAppMarketingCampaign(models.Model):
     def _get_authorized_connection_domain(self):
         """Get domain for connections user is authorized to access"""
         user = self.env.user
-        if user.has_group('base.group_system'):
+        if user.has_group('whatsapp_chat_module.group_whatsapp_admin'):
             return []
         return [('authorized_person_ids', 'in', [user.id])]
 
@@ -806,8 +804,9 @@ class WhatsAppMarketingCampaign(models.Model):
         connection._trigger_socket_connection(origin)
         
         # Clear and wait for confirmation
-        connection.socket_connection_ready = False
-        connection.env.cr.commit()
+        connection_sudo = connection.sudo()
+        connection_sudo.socket_connection_ready = False
+        connection_sudo.env.cr.commit()
         
         # Wait for socket connection
         check_interval = 0.1
@@ -815,8 +814,8 @@ class WhatsAppMarketingCampaign(models.Model):
         
         socket_confirmed = False
         while waited < max_wait:
-            fresh_env = connection.env(cr=connection.env.cr)
-            fresh_record = fresh_env['whatsapp.connection'].browse(connection.id)
+            fresh_env = connection_sudo.env(cr=connection_sudo.env.cr)
+            fresh_record = fresh_env['whatsapp.connection'].browse(connection_sudo.id)
             fresh_record.invalidate_recordset(['socket_connection_ready'])
             
             if fresh_record.socket_connection_ready:
@@ -838,14 +837,12 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
 
     phone_to = fields.Char(
         string='Phone Number',
-        required=True,
         help='Phone number to send test message to (e.g., +1234567890)',
         default=lambda self: self.env.user.partner_id.mobile or self.env.user.partner_id.phone or ''
     )
     campaign_id = fields.Many2one(
         'whatsapp.marketing.campaign',
         string='Campaign',
-        required=True,
         ondelete='cascade'
     )
 

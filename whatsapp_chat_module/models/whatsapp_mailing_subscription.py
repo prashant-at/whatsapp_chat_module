@@ -15,13 +15,13 @@ class WhatsAppMailingSubscription(models.Model):
         'whatsapp.mailing.contact',
         string='Contact',
         ondelete='cascade',
-        required=True
+        required=True,
     )
     list_id = fields.Many2one(
         'whatsapp.mailing.list',
         string='WhatsApp Mailing List',
         ondelete='cascade',
-        required=True
+        required=True,
     )
 
     _sql_constraints = [

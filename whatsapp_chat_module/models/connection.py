@@ -11,9 +11,9 @@ class WhatsAppConnection(models.Model):
     _name = 'whatsapp.connection'
     _description = 'WhatsApp Connection'
 
-    name = fields.Char(string='Connection Name', required=True)
-    from_field = fields.Char(string='From', required=True)
-    api_key = fields.Char(string='API Key', required=True)
+    name = fields.Char(string='Connection Name')
+    from_field = fields.Char(string='From')
+    api_key = fields.Char(string='API Key')
     authorized_person_ids = fields.Many2many('res.users', string='Authorized Persons', required=False,
                                             help="Users authorized to use this connection")
     authorized_person_names = fields.Char(string='Authorized Persons', compute='_compute_authorized_person_names', store=False)
@@ -59,7 +59,7 @@ class WhatsAppConnection(models.Model):
             self.search([('is_default', '=', True)]).write({'is_default': False})
         
         # If creator is not admin and authorized_person_ids not set, add creator to authorized_person_ids
-        if not self.env.user.has_group('base.group_system'):
+        if not self.env.user.has_group('whatsapp_chat_module.group_whatsapp_admin'):
             if 'authorized_person_ids' not in vals or not vals.get('authorized_person_ids'):
                 # Add creator to authorized_person_ids
                 if 'authorized_person_ids' not in vals:
@@ -117,7 +117,7 @@ class WhatsAppConnection(models.Model):
     def _get_authorized_connection_domain(self):
         """Get domain for connections user is authorized to access"""
         user = self.env.user
-        if user.has_group('base.group_system'):
+        if user.has_group('whatsapp_chat_module.group_whatsapp_admin'):
             # Administrators can see all connections
             return []
         # Regular users can only see connections where they are authorized
@@ -127,7 +127,7 @@ class WhatsAppConnection(models.Model):
     def _check_authorization(self):
         """Check if current user is authorized for this connection"""
         self.ensure_one()
-        if self.env.user.has_group('base.group_system'):
+        if self.env.user.has_group('whatsapp_chat_module.group_whatsapp_admin'):
             return True  # Admins always authorized
         if not self.authorized_person_ids:
             return False  # Empty means only admins
@@ -279,7 +279,7 @@ class WhatsAppConnection(models.Model):
         _logger.info(f"[Connection] Origin: {origin}")
         
         try:
-            response = requests.post(api_url, headers=headers, timeout=30)
+            response = requests.post(api_url, headers=headers)
             _logger.info(f"[Connection] API Response Status: {response.status_code}")
             
             result = response.json() if response.content else {}

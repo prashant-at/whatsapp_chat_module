@@ -14,8 +14,8 @@ class WhatsAppMailingContact(models.Model):
     _inherit = ['mail.thread']
     _order = 'name ASC, id DESC'
 
-    name = fields.Char('Name', required=True)
-    mobile = fields.Char('Mobile', required=True, help='Phone number (e.g., +91 9157000128)')
+    name = fields.Char('Name')
+    mobile = fields.Char('Mobile', help='Phone number (e.g., +91 9157000128)')
     display_name = fields.Char('Display Name', compute='_compute_display_name', store=True)
     
     list_ids = fields.Many2many(

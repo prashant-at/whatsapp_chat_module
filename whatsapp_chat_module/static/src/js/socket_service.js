@@ -31,7 +31,7 @@ export class SocketService {
         // Store origin - default to 127.0.0.1 for now, can be made dynamic
         this.clientOrigin = origin || window.location.origin;
         
-        console.log("[WA][Socket]  Auth credentials stored successfully");
+        
     }
 
     hasMatchingCredentials(apiKey, phoneNumber, origin) {
@@ -49,7 +49,6 @@ export class SocketService {
 
     async disconnect() {
         if (this.socket) {
-            console.log("[WA][Socket] Disconnecting existing socket...");
             // Remove all event listeners to prevent memory leaks
             this.socket.removeAllListeners();
             // Disconnect socket
@@ -70,22 +69,19 @@ export class SocketService {
             // Check if already connected with matching credentials
             if (this.socket && this.isConnected) {
                 if (this.hasMatchingCredentials(apiKey, phoneNumber, clientOrigin)) {
-                    console.log("[WA][Socket] Already connected with matching credentials, skipping");
                     return;
                 } else {
-                    console.log("[WA][Socket] Already connected with different credentials, reconnecting...");
-                    // Disconnect old socket before connecting with new credentials
                     await this.disconnect();
                 }
             }
             
             // If socket exists but not connected, clean it up
             if (this.socket && !this.isConnected) {
-                console.log("[WA][Socket] Cleaning up disconnected socket...");
+               
                 await this.disconnect();
             }
 
-            console.log("[WA][Socket] Initializing Socket.IO connection...");
+            
             
             // Import Socket.IO client dynamically
             if (!this._io) {
@@ -108,9 +104,9 @@ export class SocketService {
             };
             
             if (apiKey && phoneNumber) {
-                console.log("[WA][Socket]  Connecting with authentication headers");
+                
             } else {
-                console.log("[WA][Socket]  Connecting without credentials - connection may fail");
+                
             }
 
             // Connect to your backend (local Socket.IO server)
@@ -118,11 +114,10 @@ export class SocketService {
 
             this.setupEventHandlers();
             
-            console.log("[WA][Socket] Client initialized, awaiting connect...");
+            
             
         } catch (error) {
             console.error("[WA][Socket] Failed to initialize Socket.IO:", error);
-        
             throw error;
         }
     }
@@ -141,9 +136,7 @@ export class SocketService {
         // Connection events
         this.socket.on('connect', () => {
             console.log("🔗 [Socket Event] CONNECT - Socket.IO connected:", this.socket.id);
-            console.log("🔗 [Socket Event] CONNECT - User ID:", this.userId);
             this.isConnected = true;
-
             // Backend automatically joins socket.id to room, no need to emit join_user
             console.log("🔗 [Socket Event] CONNECT - Socket connected successfully");
             this._emitLocal('connect', { socketId: this.socket.id });
@@ -166,20 +159,20 @@ export class SocketService {
         });
 
         this.socket.on('connect_error', (error) => {
-            console.error("❌ [Socket Event] CONNECT_ERROR - Error message:", error.message);
-            console.error("❌ [Socket Event] CONNECT_ERROR - Error stack:", error.stack);
+            console.error(" [Socket Event] CONNECT_ERROR - Error message:", error.message);
+            console.error(" [Socket Event] CONNECT_ERROR - Error stack:", error.stack);
             this.isConnected = false;
             this._emitLocal('connect_error', error);
         });
 
         // Listen for any error or message events from server
-        this.socket.onAny((eventName, ...args) => {
-            console.log(`🔔 [Socket Event] Received event '${eventName}':`);
-        });
+        // this.socket.onAny((eventName, ...args) => {
+        //     console.log(`🔔 [Socket Event] Received event '${eventName}':`);
+        // });
 
         // WhatsApp specific events - Backend wraps all events in { data: ... }
         this.socket.on('qr_code', ({ data }) => {
-            console.log(" [Socket Event] QR_CODE received:");
+           
             
             // Update UI instantly via DOM
             this.updateQrPopupUI(data);
@@ -190,7 +183,6 @@ export class SocketService {
         });
 
         this.socket.on('phone_mismatch', ({ data }) => {
-            console.log(" [Socket Event] PHONE_MISMATCH received:");
             
             // Update UI instantly via DOM
             this.updateQrPopupUI(data);
@@ -201,19 +193,16 @@ export class SocketService {
         });
 
         this.socket.on('status', ({ data }) => {
-            console.log("📱 [Socket Event] STATUS received:");
             this.sendRPC('status', data);
             this._emitLocal('status', data);
         });
 
         this.socket.on('message', ({ data }) => {
-            console.log("📱 [Socket Event] MESSAGE received:");
             // this.sendRPC('message', data);
             this._emitLocal('message', data);
         });
 
         this.socket.on('chat', ({ data }) => {
-            console.log("📱 [Socket Event] CHAT received:");
             // this.sendRPC('chat', data);
             this._emitLocal('chat', data);
         });
@@ -347,7 +336,6 @@ export class SocketService {
         })
         .then(response => {
             if (!response.ok) {
-                console.error(`[Socket Event]  RPC HTTP error: ${response.status} ${response.statusText}`);
                 return response.json().catch(() => ({}));
             }
             return response.json();

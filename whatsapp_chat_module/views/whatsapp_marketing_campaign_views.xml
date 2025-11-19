@@ -35,12 +35,12 @@
                     <sheet>
                         <div class="oe_title">
                             <label for="name"/>
-                            <h1><field name="name" placeholder="e.g. New Product Launch Campaign"/></h1>
+                            <h1><field name="name" placeholder="e.g. New Product Launch Campaign" required="1"/></h1>
                         </div>
                         <group>
                             <group>
                                 <field name="from_connection_id" 
-                                       options="{'no_create': True}"
+                                       options="{'no_create': True ,'no_open': True}"
                                        required="1"/>
                             </group>
                         </group>
@@ -51,7 +51,8 @@
                                     <div class="col-md-auto">
                                         <field name="mailing_model_id" 
                                                options="{'no_open': True, 'no_create': True}"
-                                               readonly="state in ('sending', 'sent')"/>
+                                               readonly="state in ('sending', 'sent')"
+                                               required="1"/>
                                     </div>
                                     <div invisible="not mailing_on_mailing_list" class="col-md-auto pt-1">
                                         <label for="whatsapp_list_ids" string="Select WhatsApp mailing lists:" class="oe_edit_only"/>
@@ -119,6 +120,7 @@
             <field name="res_model">whatsapp.marketing.campaign</field>
             <field name="view_mode">tree,form</field>
             <field name="search_view_id" ref="view_whatsapp_marketing_campaign_search"/>
+            <field name="groups_id" eval="[(4, ref('whatsapp_chat_module.group_whatsapp_manager'))]"/>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create your first WhatsApp campaign
@@ -140,7 +142,8 @@
                         Send a sample campaign for testing purpose to the phone number below.
                     </p>
                     <group>
-                        <field name="phone_to" placeholder="+1234567890"/>
+                        <field name="campaign_id" invisible="1"/>
+                        <field name="phone_to" placeholder="+1234567890" required="1"/>
                     </group>
                     <footer>
                         <button string="Send test" name="send_test" type="object" class="btn-primary" data-hotkey="q"/>

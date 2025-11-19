@@ -10,7 +10,7 @@
                 <button class="oe_highlight" icon="fa-whatsapp" 
                         name="%(whatsapp_chat_module.action_whatsapp_simple_wizard)d" 
                         string="WhatsApp Chat" type="action"
-                        groups="whatsapp_chat_module.group_whatsapp_send"/>
+                        groups="whatsapp_chat_module.group_whatsapp_user"/>
             </xpath>
         </field>
     </record>
@@ -25,7 +25,7 @@
                 <button class="oe_highlight" icon="fa-whatsapp" 
                         name="%(whatsapp_chat_module.action_whatsapp_simple_wizard)d" 
                         string="WhatsApp Chat" type="action"
-                        groups="whatsapp_chat_module.group_whatsapp_send"/>
+                        groups="whatsapp_chat_module.group_whatsapp_user"/>
             </xpath>
         </field>
     </record>
@@ -40,7 +40,7 @@
                 <button class="oe_highlight" icon="fa-whatsapp" 
                         name="%(whatsapp_chat_module.action_whatsapp_simple_wizard)d" 
                         string="WhatsApp Chat" type="action"
-                        groups="whatsapp_chat_module.group_whatsapp_send"/>
+                        groups="whatsapp_chat_module.group_whatsapp_user"/>
             </xpath>
         </field>
     </record>
@@ -55,7 +55,7 @@
                 <button class="oe_highlight" icon="fa-whatsapp" 
                         name="%(whatsapp_chat_module.action_whatsapp_simple_wizard)d" 
                         string="WhatsApp Chat" type="action"
-                        groups="whatsapp_chat_module.group_whatsapp_send"/>
+                        groups="whatsapp_chat_module.group_whatsapp_user"/>
             </xpath>
         </field>
     </record>

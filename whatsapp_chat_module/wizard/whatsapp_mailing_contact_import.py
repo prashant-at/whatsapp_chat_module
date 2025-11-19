@@ -20,7 +20,7 @@ class WhatsAppMailingContactImport(models.TransientModel):
         Formats supported:
         - "Name +1234567890"
         - "+1234567890"
-        - "Name +91 9157000128"
+        - "Name +91 8156234543"
         """
         line = line.strip()
         if not line:

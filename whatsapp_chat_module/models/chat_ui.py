@@ -5,7 +5,7 @@ class WhatsAppChatUI(models.TransientModel):
     _name = 'whatsapp.chat.ui'
     _description = 'WhatsApp Chat UI'
 
-    selected_mobile_number = fields.Selection(selection='_get_mobile_numbers', string='Mobile No.', required=True)
+    selected_mobile_number = fields.Selection(selection='_get_mobile_numbers', string='Mobile No.')
 
     def _get_mobile_numbers(self):
         """Get mobile numbers from authorized connections"""

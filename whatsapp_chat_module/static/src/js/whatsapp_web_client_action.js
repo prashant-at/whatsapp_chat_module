@@ -96,6 +96,8 @@ export class WhatsAppWebClientAction extends Component {
                     this.state.qrImage = null;
                     this.state.showQRModal = false; // Hide QR modal when ready
                     this.state.canSendMessages = true;
+                    // Update connection statuses when ready
+                    this.updateConnectionStatuses();
                     // Fetch chats on first ready if not loaded yet
                     if (!this._initialChatsLoaded) {
                         this._initialChatsLoaded = true;
@@ -106,6 +108,8 @@ export class WhatsAppWebClientAction extends Component {
                     this.state.banner = 'Disconnected. Please re-scan.';
                     this.state.stage = this.state.stage === 'ready' ? 'qr' : this.state.stage;
                     this.state.showQRModal = true; // Show QR modal when disconnected
+                    // Update connection statuses when disconnected
+                    this.updateConnectionStatuses();
                 } else if (type === 'qr_code_mismatch') {
                     this.state.error = data?.message || 'QR code mismatch. Please try again.';
                     this.state.stage = 'qr';
@@ -114,6 +118,17 @@ export class WhatsAppWebClientAction extends Component {
                     this.state.error = data?.message || 'Authentication failed';
                     this.state.needsAuth = true;
                 }
+            })
+        );
+        // Subscribe to socket connect/disconnect events to update connection statuses
+        this._unsubscribe.push(
+            socketService.on('connect', () => {
+                this.updateConnectionStatuses();
+            })
+        );
+        this._unsubscribe.push(
+            socketService.on('disconnect', () => {
+                this.updateConnectionStatuses();
             })
         );
         this._unsubscribe.push(
@@ -301,7 +316,7 @@ export class WhatsAppWebClientAction extends Component {
         
         // Safety timeout: Force loading to complete after 10 seconds
         const loadingTimeout = setTimeout(() => {
-            console.warn("[WA][Action] Loading timeout reached - forcing completion");
+            console.warn("[WA] Loading timeout - forcing completion");
             this.state.isLoading = false;
         }, 10000);
         
@@ -313,7 +328,7 @@ export class WhatsAppWebClientAction extends Component {
                     this.orm.searchRead(
                 "whatsapp.connection",
                 [],
-                ["name", "from_field", "api_key", "is_default"]
+                ["name", "from_field", "api_key", "is_default", "socket_connection_ready"]
                     ),
                     new Promise((_, reject) => setTimeout(() => reject(new Error("Connection fetch timeout")), 10000))
                 ]);
@@ -322,7 +337,11 @@ export class WhatsAppWebClientAction extends Component {
                 connections = [];
             }
             
-            this.state.connections = connections || [];
+            // Map connections to include connection_status
+            this.state.connections = (connections || []).map(conn => ({
+                ...conn,
+                connection_status: this.getConnectionStatus(conn)
+            }));
             
             // Priority: User's default connection > Global default connection > None
             // First, try to get current user's default connection
@@ -360,6 +379,8 @@ export class WhatsAppWebClientAction extends Component {
             
             if (defaultConnection) {
                 this.state.selectedConnection = defaultConnection;
+                // Update connection statuses after setting default connection
+                this.updateConnectionStatuses();
                 
                 // Set socket authentication with API credentials
                 if (defaultConnection.api_key && defaultConnection.from_field) {
@@ -381,10 +402,13 @@ export class WhatsAppWebClientAction extends Component {
                     );
                     // Connect socket with credentials (don't wait - do it in background)
                     socketService.connect().then(() => {
-                        console.log("[WA][Action] Socket connected with credentials");
+                        // Update connection statuses after initial connection
+                        this.updateConnectionStatuses();
                     }).catch((e) => {
-                        console.error("[WA][Action] Socket connection failed:", e);
+                        console.error("[WA] Socket connection failed:", e.message || e);
                         // Don't block UI if socket fails
+                        // Update statuses even on failure
+                        this.updateConnectionStatuses();
                     });
 
                     // New flow: try to load chats immediately; if unauthenticated, socket will emit QR
@@ -394,21 +418,18 @@ export class WhatsAppWebClientAction extends Component {
                         this.state.stage = 'ready';
                         return;
                     } catch (convErr) {
-                        console.warn("[WA][Action] Initial chats fetch failed, waiting for socket QR:", convErr?.message || convErr);
                         // Do not force QR via REST; rely on socket 'qr_code' event
                     }
                 } else {
-                    console.warn("[WA][Action] No credentials available for default connection");
+                    console.warn("[WA] Default connection missing credentials");
                 }
             } else {
-                console.log("[WA][Action] No default connection found in database");
                 if (connections.length > 0) {
                     // Auto-select first available connection instead of showing popup
                     const firstConnection = connections[0];
-                    console.log("[WA][Action] Auto-selecting first available connection:", firstConnection.name);
                     await this.selectConnection(firstConnection.id);
                 } else {
-                    console.warn("[WA][Action] No connections available");
+                    console.warn("[WA] No WhatsApp connections configured");
                     // Show error message in UI
                     this.state.error = "No WhatsApp connections configured. Please create a connection first.";
                 }
@@ -418,17 +439,13 @@ export class WhatsAppWebClientAction extends Component {
         } catch (error) {
             // Only log unexpected errors (not timeouts which we handle gracefully)
             if (!error.message || !error.message.includes("timeout")) {
-                console.error("[WA][Action] Unexpected error loading data:", error);
-                console.error("[WA][Action] Error details:", error.message, error.stack);
-            } else {
-                console.warn("[WA][Action] Timeout occurred but continuing:", error.message);
+                console.error("[WA] Error loading data:", error.message || error);
             }
             // Ensure state is set on error
             this.state.connections = this.state.connections || [];
             this.state.conversations = this.state.conversations || [];
         } finally {
             clearTimeout(loadingTimeout);
-            console.log("[WA][Action] Setting isLoading to false");
             this.state.isLoading = false;
             // Force reactivity update
             if (this.state.update) {
@@ -449,9 +466,7 @@ export class WhatsAppWebClientAction extends Component {
             
             // Need API credentials from selected connection
             if (!this.apiKey || !this.phoneNumber) {
-                console.warn("[WA][Action]  No API credentials available, skipping chat load");
-                console.warn("[WA][Action]   - apiKey:", this.apiKey ? 'Present' : 'MISSING');
-                console.warn("[WA][Action]   - phoneNumber:", this.phoneNumber ? 'Present' : 'MISSING');
+                console.warn("[WA] Missing API credentials - skipping chat load");
                 this.state.conversations = [];
                 this.state.filteredConversations = [];
                 return;
@@ -563,7 +578,7 @@ export class WhatsAppWebClientAction extends Component {
             // Apply search filter if exists
             this.filterConversations();
         } catch (error) {
-            console.error("[WA][Action] Error loading conversations:", error);
+            console.error("[WA] Error loading conversations:", error.message || error);
             // Set empty array on error so UI doesn't break
             this.state.conversations = [];
             this.state.filteredConversations = [];
@@ -622,6 +637,9 @@ export class WhatsAppWebClientAction extends Component {
             this.state.selectedConnection = connection;
             this.state.showConnectionSelector = false;
             
+            // Update connection statuses after selection
+            this.updateConnectionStatuses();
+            
             this.state.selectedConversation = null;
             this.state.messages = [];
             this._messageIdSet.clear();
@@ -634,7 +652,7 @@ export class WhatsAppWebClientAction extends Component {
                     let phoneNumber = connection.from_field;
                     
                     if (!phoneNumber) {
-                        console.error("[WA][Action] Failed to normalize phone number for connection:", connection.name);
+                        console.error("[WA] Invalid phone number for connection:", connection.name);
                         this.state.isLoading = false;
                         this.state.switchingConnection = false;
                         return;
@@ -651,17 +669,19 @@ export class WhatsAppWebClientAction extends Component {
                     );
                     // Reconnect socket with new credentials
                     if (socketService.socket) {
-                        console.log("[WA][Action] Disconnecting old socket...");
                         socketService.socket.disconnect();
                     }
                     try {
                         await socketService.connect();
-                        console.log("[WA][Action]Socket reconnected with credentials for:", connection.name);
+                        // Update connection statuses after reconnection
+                        this.updateConnectionStatuses();
                     } catch (e) {
-                        console.error("[WA][Action] Socket reconnection failed:", e);
+                        console.error("[WA] Socket reconnection failed:", e.message || e);
+                        // Update statuses even on failure
+                        this.updateConnectionStatuses();
                     }
                 } else {
-                    console.warn("[WA][Action] No credentials available for connection:", connection.name);
+                    console.warn("[WA] Connection missing credentials:", connection.name);
                 }
                 
                 await this.loadConversations(true); // Reset pagination when switching connections
@@ -670,7 +690,7 @@ export class WhatsAppWebClientAction extends Component {
                 this.state.stage = 'ready';
                 this.state.canSendMessages = true;
             } catch (error) {
-                console.error("[WA][Action] Error switching connection:", error);
+                console.error("[WA] Error switching connection:", error.message || error);
                 // Fallback to ready state even on error
                 this.state.stage = 'ready';
             } finally {
@@ -1039,7 +1059,7 @@ export class WhatsAppWebClientAction extends Component {
                                 }
                             }
                         } catch (e) {
-                            console.warn("[WA][Action] Error scrolling to bottom:", e);
+                            // Silently handle scroll errors
                         }
                         
                         // Re-attach scroll listener after messages are rendered
@@ -1048,7 +1068,6 @@ export class WhatsAppWebClientAction extends Component {
                         // Retry finding container (DOM might not be ready yet)
                         setTimeout(() => scrollToBottom(attempts + 1), 100);
                     } else {
-                        console.warn("[WA][Action] Messages container not found after multiple attempts");
                         setTimeout(() => this._attachScrollListener(), 200);
                     }
                 };
@@ -1062,11 +1081,10 @@ export class WhatsAppWebClientAction extends Component {
                 setTimeout(() => this._attachScrollListener(), 50);
             }
         } catch (error) {
-            console.error("[WA][Action] Error loading messages:", error);
+            console.error("[WA] Error loading messages:", error.message || error);
             // Revert pageIndex on error if we were loading more
             if (!reset && previousPageIndex !== undefined) {
                 this.state.messagePagination.pageIndex = previousPageIndex;
-                console.log("[WA][Action] Reverted pageIndex to:", previousPageIndex);
             }
             this.state.messagePagination.isLoadingMore = false;
         } finally {
@@ -1090,12 +1108,12 @@ export class WhatsAppWebClientAction extends Component {
         const recipientPhone = selected.contact_phone?.trim();
         
         if (!recipientPhone) {
-            console.error("[WA][Action] No recipient phone number available");
+            console.error("[WA] Missing recipient phone number");
             return;
         }
         
         if (!this.apiKey || !this.phoneNumber) {
-            console.error("[WA][Action] No API credentials available");
+            console.error("[WA] Missing API credentials");
             return;
         }
         
@@ -1108,7 +1126,6 @@ export class WhatsAppWebClientAction extends Component {
         this.removeSelectedMedia();
         
         const messageType = selectedMedia ? selectedMedia.type : 'chat';
-        console.log("messageType",messageType)
         // OPTIMISTIC MESSAGE CODE (COMMENTED OUT - using socket events instead)
         // // Create optimistic message
         // const tempMessageId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -1232,7 +1249,7 @@ export class WhatsAppWebClientAction extends Component {
             
         } catch (error) {
             this.state.mediaUploading = false;
-            console.error("[WA][Action] Error details:", error.message, error.stack);
+            console.error("[WA] Media send error:", error.message || error);
             
             // Show error to user (you can add a toast/notification here)
             // For now, we just log it - input was already cleared
@@ -1253,6 +1270,42 @@ export class WhatsAppWebClientAction extends Component {
     getConnectionStatusColor() {
         // Use is_default as indicator, or just return default color
         return this.state.selectedConnection?.is_default ? "#25d366" : "#6b7280";
+    }
+    
+    /**
+     * Get connection status for a specific connection
+     * @param {Object} connection - Connection object
+     * @returns {string} 'connected' or 'disconnected'
+     */
+    getConnectionStatus(connection) {
+        if (!connection) return 'disconnected';
+        
+        // Check if this is the currently selected connection
+        const isSelected = this.state.selectedConnection?.id === connection.id;
+        
+        // Check if socket is connected
+        const socketConnected = socketService.isConnected;
+        
+        // Check backend status (socket_connection_ready field)
+        const backendReady = connection.socket_connection_ready || false;
+        
+        // Connection is "connected" if:
+        // 1. It's the selected connection AND socket is connected, OR
+        // 2. Backend says it's ready (for other connections that were previously connected)
+        if ((isSelected && socketConnected) || backendReady) {
+            return 'connected';
+        }
+        return 'disconnected';
+    }
+    
+    /**
+     * Update connection statuses for all connections in the list
+     */
+    updateConnectionStatuses() {
+        this.state.connections = this.state.connections.map(conn => ({
+            ...conn,
+            connection_status: this.getConnectionStatus(conn)
+        }));
     }
     
     
@@ -1316,7 +1369,6 @@ export class WhatsAppWebClientAction extends Component {
     captureScrollState() {
         const container = this.refs?.messagesContainer || document.querySelector('.messages-container');
         if (!container) {
-            console.warn("[WA][Action] captureScrollState: messages container not found");
             return null;
         }
         const state = {
@@ -1335,7 +1387,6 @@ export class WhatsAppWebClientAction extends Component {
             requestAnimationFrame(() => {
                 const container = this.refs?.messagesContainer || document.querySelector('.messages-container');
                 if (!container) {
-                    console.warn("[WA][Action] restoreScrollPosition: messages container not found");
                     return;
                 }
                 const newScrollHeight = container.scrollHeight;
@@ -1456,7 +1507,7 @@ export class WhatsAppWebClientAction extends Component {
             return;
         }
         if (!this.state.selectedConversation) {
-            console.warn("[WA][Action]  Cannot create lead: no conversation selected");
+            console.warn("[WA] Cannot create lead - no conversation selected");
             return;
         }
         if (this._creatingLeadMessageId === message.id) {
@@ -1481,10 +1532,10 @@ export class WhatsAppWebClientAction extends Component {
             if (action) {
                 await this.actionService.doAction(action);
             } else {
-                console.warn("[WA][Action]Lead creation action not returned");
+                console.warn("[WA] Lead creation action not returned");
             }
         } catch (error) {
-            console.error("[WA][Action] Failed to create lead from message:", error);
+            console.error("[WA] Failed to create lead:", error.message || error);
         } finally {
             if (this._creatingLeadMessageId === message.id) {
                 this._creatingLeadMessageId = null;
@@ -1516,7 +1567,7 @@ export class WhatsAppWebClientAction extends Component {
             }
             throw new Error(result.error || 'Upload failed');
         } catch (error) {
-            console.error('[WA][Action] Media upload error:', error);
+            console.error('[WA] Media upload failed:', error.message || error);
             throw error;
         }
     }
@@ -1580,7 +1631,7 @@ export class WhatsAppWebClientAction extends Component {
             return cleaned;
         }
         
-        console.warn("[WA][Action] Could not normalize phone number:", phoneInput, "->", cleaned);
+        console.warn("[WA] Phone number normalization failed:", phoneInput);
         return cleaned; // Return anyway, validation will catch it
     }
     
@@ -1963,12 +2014,9 @@ export class WhatsAppWebClientAction extends Component {
                 if (isSelected) {
                     this.state.selectedConversation = movedChat;
                 }
-            } else {
-                // Chat is already at top, just log the update
-                console.warn("[WA][Action] Chat is already at top, just log the update");
             }
         } else {
-            console.warn("[WA][Action] Could not find chat in conversations array to update:");
+            console.warn("[WA] Chat not found in conversations array");
         }
         
         // Apply search filter

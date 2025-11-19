@@ -15,13 +15,13 @@ class WhatsAppTemplate(models.Model):
     _order = 'user_id,name,id'
 
     # Basic fields
-    name = fields.Char('Name', required=True, translate=True, help="Template name")
+    name = fields.Char('Name', translate=True, help="Template name")
     description = fields.Text(
         'Template description', translate=True,
         help="This field is used for internal description of the template's usage.")
     
     # Model association
-    model_id = fields.Many2one('ir.model', 'Applies to', ondelete='cascade', required=True,
+    model_id = fields.Many2one('ir.model', 'Applies to', ondelete='cascade',
                                help="The type of document this template can be used with")
     model = fields.Char('Related Document Model', related='model_id.model', index=True, store=True, readonly=True)
     

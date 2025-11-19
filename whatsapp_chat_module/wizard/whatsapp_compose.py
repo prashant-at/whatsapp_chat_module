@@ -2,12 +2,13 @@
 
 import time
 import json
-from odoo import models, fields, api, _
-from odoo.exceptions import UserError
-from markupsafe import Markup
+import re
+import base64
+import io
 import logging
 from datetime import timedelta
-from odoo import http
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 import html2text
 _logger = logging.getLogger(__name__)
 
@@ -16,8 +17,8 @@ class WhatsappCompose(models.TransientModel):
     _description = 'WhatsApp Chat Message Composition Wizard'
     _log_access = True
 
-    subject = fields.Char('Subject', required=True)
-    body = fields.Html('Message Content', required=True)
+    subject = fields.Char('Subject')
+    body = fields.Html('Message Content')
     template_id = fields.Many2one(
         'whatsapp.template', 'Use template',
         domain="[('model', '=', model), '|', ('user_id','=', False), ('user_id', '=', uid)]"
@@ -28,11 +29,10 @@ class WhatsappCompose(models.TransientModel):
         compute='_compute_attachment_ids', readonly=False, store=True)
     partner_ids = fields.Many2many(
         'res.partner', 'whatsapp_chat_compose_res_partner_rel',
-        'wizard_id', 'partner_id', string='Recipients', required=True)
+        'wizard_id', 'partner_id', string='Recipients')
     from_number = fields.Many2one(
         'whatsapp.connection', 
         string='From Number', 
-        required=True,
         domain=lambda self: self._wizard_authorized_connection_domain(),
         help="Select the WhatsApp connection to send messages from")
     
@@ -40,7 +40,7 @@ class WhatsappCompose(models.TransientModel):
     def _wizard_authorized_connection_domain(self):
         """Domain for wizard field: admins see all; users see only authorized connections."""
         user = self.env.user
-        if user.has_group('base.group_system'):
+        if user.has_group('whatsapp_chat_module.group_whatsapp_admin'):
             return []
         return [('authorized_person_ids', 'in', [user.id])]
     qr_code_image = fields.Binary('QR Code', readonly=True)
@@ -48,69 +48,41 @@ class WhatsappCompose(models.TransientModel):
     qr_popup_id = fields.Many2one('whatsapp.qr.popup', string='QR Popup', readonly=True)
     qr_update_count = fields.Integer('QR Updates Received', default=0, readonly=True)
     
-    def do_something(self, data):
-        """Test method for RPC calls - extended to update QR popup in-place when qr_code arrives"""
-        _logger.debug(f'[Wizard] do_something called with data: {data}')
-        # Support both dict and attribute-style payloads
-        if data.type == 'qr_code':
-            if self.qr_popup_id:
-                popup = self.env['whatsapp.qr.popup'].browse(self.qr_popup_id)
-                popup.write({
-                    'qr_code_image': 'prashant',
-                    'qr_code_filename': 'whatsapp_qr_code.png',
-                    'qr_expires_at': fields.Datetime.now() + timedelta(seconds=popup.countdown_seconds or 120),
-                    'is_expired': False,
-                    'qr_update_count': (popup.qr_update_count or 0) + 1,
-                    'last_qr_string': (data.data.qrCode or '')[:100],
-                    'message': 'Please scan the updated QR code.',
-                })
-                return {
-                    'type': 'ir.actions.act_window_close',
-                    'next': {
-                        'type': 'ir.actions.act_window',
-                        'name': 'WhatsApp Authentication Required',
-                        'res_model': 'whatsapp.qr.popup',
-                        'res_id': popup.id,
-                        'view_mode': 'form',
-                        'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                        'target': 'new',
-                    }
-                }
-
-        elif data.type == 'qr_expired':
-            self.qr_popup_id = data.data.qr_popup_id
-        elif data.type == 'phone_mismatch':
-            self.phone_mismatch = data.data.phone_mismatch
-        elif data.type == 'incoming_message':
-            self.incoming_message = data.data.incoming_message
-        elif data.type == 'outgoing_message':
-            self.outgoing_message = data.data.outgoing_message
-        elif data.type == 'pending_message_sent':
-            self.pending_message_sent = data.data.pending_message_sent
-        return {
-            'message': 'Success!'
-        }
-        
-    @api.depends('partner_ids')
-    def _compute_partner_display_names(self):
-        """Compute display names with mobile numbers"""
-        for wizard in self:
-            if wizard.partner_ids:
-                display_names = []
-                for partner in wizard.partner_ids:
-                    if partner.mobile:
-                        display_names.append(f"{partner.name} ({partner.mobile})")
-                    else:
-                        display_names.append(partner.name)
-                wizard.partner_display_names = ', '.join(display_names)
-            else:
-                wizard.partner_display_names = ''
+    # def do_something(self, data):
+    #     """Handle RPC calls from frontend socket service"""
+    #     if data.type == 'qr_expired':
+    #         self.qr_popup_id = data.data.qr_popup_id
+    #     elif data.type == 'phone_mismatch':
+    #         self.phone_mismatch = data.data.phone_mismatch
+    #     elif data.type == 'incoming_message':
+    #         self.incoming_message = data.data.incoming_message
+    #     elif data.type == 'outgoing_message':
+    #         self.outgoing_message = data.data.outgoing_message
+    #     elif data.type == 'pending_message_sent':
+    #         self.pending_message_sent = data.data.pending_message_sent
+    #     return {'message': 'Success!'}
     
-    partner_display_names = fields.Char(
-        string='Recipients with Numbers',
-        compute='_compute_partner_display_names',
-        store=True
-    )
+    # UNUSED: Computed field for partner display names - not used anywhere
+    # @api.depends('partner_ids')
+    # def _compute_partner_display_names(self):
+    #     """Compute display names with mobile numbers"""
+    #     for wizard in self:
+    #         if wizard.partner_ids:
+    #             display_names = []
+    #             for partner in wizard.partner_ids:
+    #                 if partner.mobile:
+    #                     display_names.append(f"{partner.name} ({partner.mobile})")
+    #                 else:
+    #                     display_names.append(partner.name)
+    #             wizard.partner_display_names = ', '.join(display_names)
+    #         else:
+    #             wizard.partner_display_names = ''
+    # partner_display_names = fields.Char(
+    #     string='Recipients with Numbers',
+    #     compute='_compute_partner_display_names',
+    #     store=True
+    # )
+    
     template_name = fields.Char('Template Name', default='hello_world')
     language_code = fields.Char('Language Code', default='en')
     model = fields.Char('Related Document Model', compute='_compute_model', store=True)
@@ -329,14 +301,12 @@ class WhatsappCompose(models.TransientModel):
                                 continue
                             report_content, report_format = render_res
                         
-                        import base64
                         report_content = base64.b64encode(report_content)
                         
                         # Generate name
                         if report.print_report_name:
                             try:
                                 from odoo.tools.safe_eval import safe_eval
-                                import time
                                 report_name = safe_eval(
                                     report.print_report_name,
                                     {
@@ -371,43 +341,42 @@ class WhatsappCompose(models.TransientModel):
         
         return template_values
 
-    @api.model
-    def open_qr_popup_from_socket(self, popup_id):
-        """Open QR popup from socket event using direct Odoo action"""
-        try:
-            _logger.info(f" [Compose Wizard] Opening QR popup from socket, ID: {popup_id}")
-            
-            # Return the same action structure that works in action_send_whatsapp
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'WhatsApp Authentication Required',
-                'res_model': 'whatsapp.qr.popup',
-                'res_id': popup_id,
-                'view_mode': 'form',
-                'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                'target': 'new',
-                'context': {
-                    'active_model': self.env.context.get('active_model'),
-                    'active_id': self.env.context.get('active_id'),
-                    'active_ids': self.env.context.get('active_ids'),
-                }
-            }
-        except Exception as e:
-            _logger.error(f" [Compose Wizard] Error opening QR popup from socket: {e}")
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Error'),
-                    'message': _('Failed to open QR popup: %s') % str(e),
-                    'type': 'danger',
-                    'sticky': True,
-                }
-            }
+    # @api.model
+    # def open_qr_popup_from_socket(self, popup_id):
+    #     """Open QR popup from socket event using direct Odoo action"""
+    #     try:
+    #         # Return the same action structure that works in action_send_whatsapp
+    #         return {
+    #             'type': 'ir.actions.act_window',
+    #             'name': 'WhatsApp Authentication Required',
+    #             'res_model': 'whatsapp.qr.popup',
+    #             'res_id': popup_id,
+    #             'view_mode': 'form',
+    #             'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
+    #             'target': 'new',
+    #             'context': {
+    #                 'active_model': self.env.context.get('active_model'),
+    #                 'active_id': self.env.context.get('active_id'),
+    #                 'active_ids': self.env.context.get('active_ids'),
+    #             }
+    #         }
+    #     except Exception as e:
+    #         _logger.error(f" [Compose Wizard] Error opening QR popup from socket: {e}")
+    #         return {
+    #             'type': 'ir.actions.client',
+    #             'tag': 'display_notification',
+    #             'params': {
+    #                 'title': _('Error'),
+    #                 'message': _('Failed to open QR popup: %s') % str(e),
+    #                 'type': 'danger',
+    #                 'sticky': True,
+    #             }
+    #         }
 
-    def whatsapp_service_callback(self, data):
-        """Callback function for WhatsApp service"""
-        _logger.debug(f'[Wizard] whatsapp_service_callback called with data: {data}')
+    # UNUSED: Empty callback method - not implemented or called anywhere
+    # def whatsapp_service_callback(self, data):
+    #     """Callback function for WhatsApp service"""
+    #     pass
 
     def action_send_whatsapp(self):
         """Send WhatsApp messages via Socket.IO real-time communication"""
@@ -443,30 +412,26 @@ class WhatsappCompose(models.TransientModel):
         self.from_number._trigger_socket_connection(origin)
         
         # Clear and wait for confirmation (shorter timeout than Connect button)
-        self.from_number.socket_connection_ready = False
-        self.from_number.env.cr.commit()
+        connection_sudo = self.from_number.sudo()
+        connection_sudo.socket_connection_ready = False
+        connection_sudo.env.cr.commit()
         
         # Wait for socket connection (max 2 seconds - shorter than Connect button)
-        import time
         max_wait = 2
         check_interval = 0.1
         waited = 0
-        
         socket_confirmed = False
+        
         while waited < max_wait:
-            fresh_env = self.from_number.env(cr=self.from_number.env.cr)
-            fresh_record = fresh_env['whatsapp.connection'].browse(self.from_number.id)
+            fresh_env = connection_sudo.env(cr=connection_sudo.env.cr)
+            fresh_record = fresh_env['whatsapp.connection'].browse(connection_sudo.id)
             fresh_record.invalidate_recordset(['socket_connection_ready'])
             
             if fresh_record.socket_connection_ready:
                 socket_confirmed = True
-                _logger.info(f"[Wizard] Socket confirmed connected after {waited:.1f}s")
                 break
             time.sleep(check_interval)
             waited += check_interval
-        
-        if not socket_confirmed:
-            _logger.warning(f"[Wizard] Socket not confirmed within {max_wait}s, proceeding anyway")
         
         # STEP 2: Send messages (socket should be ready for QR events)
         result = self._send_messages_via_socket(origin)
@@ -520,8 +485,7 @@ class WhatsappCompose(models.TransientModel):
                     payload
                 )
             
-            # Return close action (bus will handle notification and closing)
-            # return {'type': 'ir.actions.act_window_close'}
+            # Bus handles notification and closing
             return {}
         elif result['success_count'] > 0 and result['error_count'] > 0:
             # Some messages sent, some failed
@@ -537,12 +501,13 @@ class WhatsappCompose(models.TransientModel):
             }
         else:
             # All messages failed
+            # _logger.error(f"Failed to send messages. Errors: {'; '.join(result['error_messages'])}")
             notification = {
                 'type': 'ir.actions.client',
                 'tag': 'display_notification',
                 'params': {
                     'title': _('WhatsApp Messages Failed'),
-                    'message': f"Failed to send messages. Errors: {'; '.join(result['error_messages'])}",
+                    'message': f"Failed to send messages.",
                     'type': 'danger',
                     'sticky': True,
                 }
@@ -555,7 +520,6 @@ class WhatsappCompose(models.TransientModel):
         try:
             import requests
             
-            # Send messages to each recipient individually
             success_count = 0
             error_messages = []
             
@@ -565,39 +529,10 @@ class WhatsappCompose(models.TransientModel):
                     continue
                     
                 try:
-                    # Prepare form data for WhatsApp API
-                    # Strip HTML tags and convert to plain text for WhatsApp
-                    import re
-                    from bs4 import BeautifulSoup
+                    # Convert HTML to plain text for WhatsApp
+                    plain_text = html2text.html2text(self.body) if self.body else ""
                     
-                    # Remove HTML tags and convert to plain text
-                    if self.body:
-                        # Use BeautifulSoup to properly strip HTML but preserve spacing
-                        # soup = BeautifulSoup(self.body, 'html.parser')
-                        # plain_text = soup.get_text(separator=' ')
-                        # # Only remove excessive whitespace (3+ spaces) but keep single spaces and line breaks
-                        # plain_text = re.sub(r' {3,}', ' ', plain_text)
-                        # # Decode HTML entities
-                        # plain_text = plain_text.replace('&nbsp;', ' ')
-                        # plain_text = plain_text.replace('&amp;', '&')
-                        # plain_text = plain_text.replace('&lt;', '<')
-                        # plain_text = plain_text.replace('&gt;', '>')
-                        # plain_text = plain_text.replace('&quot;', '"')
-                        plain_text = html2text.html2text(self.body)
-                    else:
-                        plain_text = ""
-                    
-                   
-                    # form_data = {
-                    #     'apiKey': self.from_number.api_key or 'd4f3c5577ea1bbde657df1df3c02fa371dd140aa357bf10a90200b71baa37033',
-                    #     'phoneNumber': self.from_number.from_field,
-                    #     'to': partner.mobile,
-                    #     'messageType': 'text',
-                    #     'text': plain_text,
-                    #     'content_type': 'application/json'
-                    # }
-                  
-                    # Determine attachments and message type BEFORE headers/request
+                    # Determine attachments and message type
                     has_attachments = bool(self.attachment_ids)
                     message_type = 'document' if has_attachments else 'chat'
 
@@ -621,26 +556,20 @@ class WhatsappCompose(models.TransientModel):
                         normalized_to = f"{cc} {rest}" if rest else cc
                     else:
                         normalized_to = re.sub(r'\s+', '', raw_phone)
-                    _logger.debug(f"[Wizard] Normalized phone number for {partner.name}: {normalized_to}")
+                    
 
                     if has_attachments:
                         # Build multipart form with files
-                        import base64
-                        import io
                         files = []
-                        
                         for attachment in self.attachment_ids:
                             file_data = b''
-                            
                             try:
                                 # Decode attachment.datas (base64 in database)
-                                b64_value = attachment.sudo().datas or ''
-                                
+                                b64_value = attachment.sudo().datas or ''                                
                                 if b64_value:
                                     # Handle string/bytes conversion
                                     if isinstance(b64_value, bytes):
-                                        b64_value = b64_value.decode('utf-8', errors='ignore')
-                                    
+                                        b64_value = b64_value.decode('utf-8', errors='ignore')                                    
                                     # Remove data URI prefix if present
                                     if isinstance(b64_value, str) and b64_value.startswith('data:'):
                                         b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
@@ -654,7 +583,7 @@ class WhatsappCompose(models.TransientModel):
                                         file_data = base64.b64decode(b64_value)
                                         
                             except Exception as e:
-                                _logger.error(f" [Attachment {attachment.id}] Error decoding attachment: {e}")
+                                _logger.error(f"Error decoding attachment {attachment.id}: {e}")
                                 continue
                             
                             # Sanitize filename: replace path separators with underscores
@@ -673,9 +602,7 @@ class WhatsappCompose(models.TransientModel):
                                     'files',
                                     (filename, io.BytesIO(file_data), mimetype)
                                 ))
-                                _logger.info(f" Added attachment: {filename} ({len(file_data)} bytes, {mimetype})")
-                            else:
-                                _logger.warning(f" [Attachment {attachment.id}] Skipping: No file data available")
+                            
 
                         form_data = {
                             'to': normalized_to,
@@ -683,8 +610,6 @@ class WhatsappCompose(models.TransientModel):
                             'body': plain_text,
                         }
                         
-                        _logger.info(f" Sending multipart request with {len(files)} file(s)")
-
                         response = requests.post(
                             api_url,
                             data=form_data,
@@ -704,18 +629,17 @@ class WhatsappCompose(models.TransientModel):
                             headers=headers,
                             timeout=120
                         )
-                    _logger.info(f" API Response for {partner.name}: Status={response.status_code}, Body={response.text}")
+                    
                     
                     # Accept both 200 and 201 as success (201 = QR code required)
                     if response.status_code in [200, 201]:
-                        _logger.info(f" [Wizard] Response data: {response.status_code}")
                         # MAIN PATH ONLY: strictly parse JSON; treat invalid JSON as error
                         try:
                             response_data = response.json()
                         except Exception as json_error:
                             error_msg = f"{partner.name}: Invalid JSON from API - {json_error}"
                             error_messages.append(error_msg)
-                            _logger.error(f" {error_msg}. Raw: {response.text}")
+                            _logger.error(f"Invalid JSON response from API for {partner.name}: {json_error}")
                             continue
 
                         # If API signals a QR is required (201 status or qrCode in response), open popup and return immediately
@@ -725,18 +649,7 @@ class WhatsappCompose(models.TransientModel):
                         )
                         
                         if qr_code_in_response:
-                            _logger.info(f" [Wizard] QR code required for partner: {partner.name}")
-                            
-                            qr_code_data_url = qr_code_in_response
-                            if isinstance(qr_code_data_url, str) and qr_code_data_url.startswith('data:image'):
-                                qr_code_base64 = qr_code_data_url
-                            else:
-                                qr_code_base64 = qr_code_data_url
-
-                            _logger.info(f" [Wizard] QR code data length: {len(qr_code_base64) if qr_code_base64 else 0}")
-                            
-                            _logger.info(f" [Wizard] Creating QR popup with API key: {self.from_number.api_key[:10] if self.from_number.api_key else 'None'}...")
-                            _logger.info(f" [Wizard] Phone number: {self.from_number.from_field}")
+                            qr_code_base64 = qr_code_in_response
                             
                             # Store context for later chatter logging
                             active_model = self.model or self.env.context.get('active_model')
@@ -763,12 +676,10 @@ class WhatsappCompose(models.TransientModel):
                             })
                             self.qr_popup_id = qr_popup.id
                             self.write({'qr_popup_id': qr_popup.id})
-                            _logger.info(f" [Wizard] QR popup created successfully. ID={qr_popup.id}")
                             
-                            # Note: We return early here when QR is needed. After QR authentication,
+                            # Return early when QR is needed. After QR authentication,
                             # action_close_qr_popup() will call _send_messages_via_socket() again,
-                            # which will process ALL recipients (self.partner_ids) from the beginning.
-                            # This ensures all recipients get the message after authentication.
+                            # processing ALL recipients from the beginning.
                             return {
                                 'qr_popup_needed': True,
                                 'qr_popup_id': qr_popup.id,
@@ -777,19 +688,10 @@ class WhatsappCompose(models.TransientModel):
                                 'error_messages': [],
                             }
 
-                        # Log the actual response data for debugging
-                        _logger.info(f" [Wizard] Response data for {partner.name}: {response_data}")
-                        _logger.info(f" [Wizard] QR code found: {bool(qr_code_in_response)}")
                         
-                        # No QR required: rely on success flag
+                        # No QR required: check success flag
                         if response_data.get('success', False):
-                            # Double check: if we get success without QR, log it
-                            if not qr_code_in_response:
-                                _logger.warning(f" [Wizard] API returned success=true without QR code for {partner.name}")
-                                _logger.warning(f" [Wizard] This might indicate an issue. Response: {response_data}")
-                            
                             success_count += 1
-                            _logger.info(f" Message sent to {partner.name} ({partner.mobile}) - API confirmed success")
                         else:
                             # Extract error message from response
                             error_detail = response_data.get('error', response_data.get('message', 'Unknown error'))
@@ -798,8 +700,7 @@ class WhatsappCompose(models.TransientModel):
                             
                             error_msg = f"{partner.name}: {error_detail}"
                             error_messages.append(error_msg)
-                            _logger.error(f" API returned success=false for {partner.name}: {error_detail}")
-                            _logger.error(f" Full response: {response_data}")
+                            _logger.error(f"API returned success=false for {partner.name}: {error_detail}")
                     else:
                         # Try to extract error message from response
                         error_detail = "Unknown error"
@@ -814,20 +715,19 @@ class WhatsappCompose(models.TransientModel):
                         
                         error_msg = f"{partner.name}: {error_detail}"
                         error_messages.append(error_msg)
-                        _logger.error(f" Failed to send to {partner.name}: Status {response.status_code} - {error_detail}")
-                        _logger.error(f" Full response: {response.text}")
+                        _logger.error(f"Failed to send to {partner.name}: HTTP {response.status_code} - {error_detail}")
                         
                 except Exception as e:
                     error_msg = f"{partner.name}: {str(e)}"
                     error_messages.append(error_msg)
-                    _logger.exception(f" Error sending to {partner.name}: {e}")
+                    _logger.exception(f"Error sending WhatsApp message to {partner.name}: {e}")
             
             # Log results
             if success_count > 0:
-                _logger.info(f" Successfully sent {success_count} messages via WhatsApp API")
+                _logger.info(f"Successfully sent {success_count} message(s) via WhatsApp API")
             
             if error_messages:
-                _logger.warning(f" {len(error_messages)} messages failed: {error_messages}")
+                _logger.warning(f"{len(error_messages)} message(s) failed: {', '.join(error_messages[:3])}{'...' if len(error_messages) > 3 else ''}")
             
             # Return results
             return {
@@ -837,92 +737,9 @@ class WhatsappCompose(models.TransientModel):
             }
                 
         except Exception as e:
-            _logger.exception(f" Error in WhatsApp API integration: {e}")
+            _logger.exception(f"Error in WhatsApp API integration: {e}")
             raise UserError(_("Failed to send messages via WhatsApp API: %s") % str(e))
     
-    # def action_close_qr_popup(self,popup=False):
-    #     print("Popupppppppppp",popup)
-    #     """Close QR popup and proceed with sending messages"""
-    #     self.ensure_one()
-        
-    #     # Try to send messages again after QR scan
-    #     result = self._send_messages_via_socket()
-        
-        
-    #     # Log messages in chatter ONLY if messages were actually sent successfully
-    #     # Use stored context from QR popup if available, otherwise use current context
-    #     if result.get('success_count', 0) > 0:
-    #         # Get QR popup to retrieve stored context\
-
-    #         return {
-    #             'type': 'ir.actions.act_window',
-    #             'res_model': 'sale.order',
-    #             'view_mode': 'form',
-    #             'res_id': 25877,
-    #             'target': 'current',
-    #         }
-    #         qr_popup = self.env['whatsapp.qr.popup'].search([
-    #             ('original_wizard_id', '=', self.id)
-    #         ], order='create_date desc', limit=1)
-            
-    #         if qr_popup and qr_popup.original_context:
-    #             # Restore original context from QR popup
-    #             try:
-    #                 restored_context = json.loads(qr_popup.original_context)
-    #                 # Use stored active_model and active_id if available
-    #                 if qr_popup.active_model and qr_popup.active_id:
-    #                     restored_context['active_model'] = qr_popup.active_model
-    #                     restored_context['active_id'] = qr_popup.active_id
-    #                 # Call _log_in_chatter with restored context
-    #                 self.with_context(**restored_context)._log_in_chatter(
-    #                     [partner.name for partner in self.partner_ids], 
-    #                     []
-    #                 )
-    #                 _logger.info(f" [Wizard] Chatter logged using stored context from QR popup")
-    #             except Exception as e:
-    #                 _logger.warning(f" [Wizard] Failed to restore context, using current context: {e}")
-    #                 # Fallback to current context
-    #                 self._log_in_chatter(
-    #                     [partner.name for partner in self.partner_ids], 
-    #                     []
-    #                 )
-    #         else:
-    #             # Fallback: use current context (wizard already has model and res_ids)
-    #             self._log_in_chatter(
-    #                 [partner.name for partner in self.partner_ids], 
-    #                 []
-    #             )
-    #             _logger.info(f" [Wizard] Chatter logged using current wizard context")
-        
-    #     if result['success_count'] > 0:
-    #         if result['error_count'] > 0:
-    #             # Partial success
-    #             message = _("Successfully sent %d messages. %d failed: %s") % (
-    #                 result['success_count'], 
-    #                 result['error_count'], 
-    #                 ', '.join(result['error_messages'])
-    #             )
-    #             notification_type = "warning"
-    #         else:
-    #             # Complete success
-    #             message = _("Successfully sent %d messages via WhatsApp!") % result['success_count']
-    #             notification_type = "success"
-    #     else:
-    #         # Complete failure
-    #         message = _("Failed to send messages: %s") % ', '.join(result['error_messages'])
-    #         notification_type = "danger"
-        
-
-    #     return {
-    #         'type': 'ir.actions.client',
-    #         'tag': 'display_notification',
-    #         'params': {
-    #             'title': _('WhatsApp Message Status'),
-    #             'message': message,
-    #             'type': notification_type,
-    #             'sticky': False,
-    #         }
-    #     }
     def action_close_qr_popup(self, popup=False):
         self.ensure_one()
 
@@ -965,8 +782,6 @@ class WhatsappCompose(models.TransientModel):
             ], limit=1).id or 0
         )
 
-        # Send bus message to both specific popup channel and user's partner channel
-        # This ensures the frontend can receive it regardless of subscription
         # Odoo 17+ requires string channels, not tuples
         payload = {
             'action': 'close',
@@ -982,29 +797,20 @@ class WhatsappCompose(models.TransientModel):
         
         # Send to specific popup channel (string format for Odoo 17+)
         popup_channel = f"{dbname}_qr_popup_{popup_id}"
-        _logger.info(f" [Bus] Sending QR popup close to channel: {popup_channel}, payload: {payload}")
         self.env['bus.bus']._sendone(
             popup_channel,
             'qr_popup_close',
             payload
         )
-        
-        # Also send to current user's partner channel (always subscribed)
-        # This ensures the notification is received even if popup channel subscription fails
-        # Pass the Model instance so channel_with_db converts it to (dbname, 'res.partner', id)
-        # which matches Odoo's default partner channel subscription
         current_user = self.env.user
         if current_user and current_user.partner_id:
-            _logger.info(f" [Bus] Sending QR popup close to partner channel: {current_user.partner_id.id}, payload: {payload}")
             self.env['bus.bus']._sendone(
                 current_user.partner_id,
                 'qr_popup_close',
                 payload
             )
         else:
-            _logger.warning(f" [Bus] No partner_id found for user: {current_user}")
-
-        # RETURN NOTHING — BUS HANDLES EVERYTHING
+            _logger.warning(f"No partner_id found for user {current_user.login if current_user else 'Unknown'}")
         return {}
 
 
@@ -1047,9 +853,11 @@ class WhatsappCompose(models.TransientModel):
                     })
                     attachment_ids_for_log.append(log_attachment.id)
             
-            # Log the WhatsApp message in chatter
+            # Convert HTML to plain text for safe chatter logging
+            safe_body = html2text.html2text(message_content)
+
             record.message_post(
-                body=Markup(message_content),
+                body=safe_body,
                 subject=email_subject,
                 attachment_ids=attachment_ids_for_log,
                 message_type='comment',

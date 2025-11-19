@@ -10,7 +10,7 @@ class WhatsAppMailingList(models.Model):
     _order = 'name'
     _mailing_enabled = True
 
-    name = fields.Char('WhatsApp Mailing List', required=True)
+    name = fields.Char('WhatsApp Mailing List')
     active = fields.Boolean(default=True)
     contact_count = fields.Integer(
         'Recipients',

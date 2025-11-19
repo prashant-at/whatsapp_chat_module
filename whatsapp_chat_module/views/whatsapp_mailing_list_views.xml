@@ -52,7 +52,7 @@
                         <div class="oe_title">
                             <label for="name"/>
                             <h1>
-                                <field name="name" class="text-break" placeholder="e.g. VIP Customers"/>
+                                <field name="name" class="text-break" placeholder="e.g. VIP Customers" required="1"/>
                             </h1>
                         </div>
                         <group>
@@ -156,6 +156,7 @@
             <field name="name">WhatsApp Lists</field>
             <field name="res_model">whatsapp.mailing.list</field>
             <field name="view_mode">kanban,tree,form</field>
+            <field name="groups_id" eval="[(4, ref('whatsapp_chat_module.group_whatsapp_manager'))]"/>
             <field name="help" type="html">
                 <p class="o_view_nocontent_smiling_face">
                     Create a WhatsApp Mailing List

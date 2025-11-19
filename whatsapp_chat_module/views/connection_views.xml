@@ -11,12 +11,12 @@
                 <sheet>
                     <group>
                         <group>
-                            <field name="name"/>
-                            <field name="from_field"/>
+                            <field name="name" required="1"/>
+                            <field name="from_field" required="1"/>
                             <field name="is_default"/>
                         </group>
                         <group>
-                            <field name="api_key"/>
+                            <field name="api_key" required="1"/>
                             <field name="authorized_person_ids" widget="many2many_tags"/>
                         </group>
                     </group>
@@ -43,5 +43,6 @@
         <field name="name">WhatsApp Connections</field>
         <field name="res_model">whatsapp.connection</field>
         <field name="view_mode">tree,form</field>
+        <field name="groups_id" eval="[(4, ref('whatsapp_chat_module.group_whatsapp_admin'))]"/>
     </record>
 </odoo>
