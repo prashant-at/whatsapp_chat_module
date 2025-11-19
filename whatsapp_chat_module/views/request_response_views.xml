@@ -1,0 +1,50 @@
+<!-- <?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_whatsapp_request_response_form" model="ir.ui.view">
+        <field name="name">whatsapp.request.response.form</field>
+        <field name="model">whatsapp.request.response</field>
+        <field name="arch" type="xml">
+            <form string="WhatsApp Request Response">
+                <header>
+                    <field name="stage_id" widget="statusbar" statusbar_visible="pass,fail" editable="True"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="from_field"/>
+                            <field name="connection_id"/>
+                        </group>
+                        <group>
+                            <field name="request_url"/>
+                        </group>
+                    </group>
+                    <group>
+                        <field name="request_data"/>
+                        <field name="response_data"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_whatsapp_request_response_tree" model="ir.ui.view">
+        <field name="name">whatsapp.request.response.tree</field>
+        <field name="model">whatsapp.request.response</field>
+        <field name="arch" type="xml">
+            <tree string="WhatsApp Request Response">
+                <field name="name"/>
+                <field name="from_field"/>
+                <field name="connection_id"/>
+                <field name="request_url"/>
+                <field name="stage_id"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="action_whatsapp_request_response" model="ir.actions.act_window">
+        <field name="name">WhatsApp Request Response</field>
+        <field name="res_model">whatsapp.request.response</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+</odoo> -->

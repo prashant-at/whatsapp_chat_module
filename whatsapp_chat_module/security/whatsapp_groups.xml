@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- WhatsApp Send Access Group -->
+    <!-- This group appears in Technical section as a checkbox -->
+    <record id="group_whatsapp_send" model="res.groups">
+        <field name="name">Send WhatsApp</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+        <field name="comment">Allow user to send WhatsApp messages via the WhatsApp Chat button</field>
+    </record>
+</odoo>
+
+<!-- access_whatsapp_contact,whatsapp.contact,whatsapp_chat_module.model_whatsapp_contact,base.group_user,1,1,1,1
+access_whatsapp_message,whatsapp.message,whatsapp_chat_module.model_whatsapp_message,base.group_user,1,1,1,1
+access_whatsapp_conversation,whatsapp.conversation,whatsapp_chat_module.model_whatsapp_conversation,base.group_user,1,1,1,1 -->
+<!-- access_whatsapp_api_service,whatsapp.api.service,whatsapp_chat_module.model_whatsapp_api_service,base.group_user,1,1,1,1 -->
+<!-- access_whatsapp_stage,whatsapp.stage,whatsapp_chat_module.model_whatsapp_stage,base.group_user,1,1,1,1 -->
+<!-- access_whatsapp_request_response,whatsapp.request.response,whatsapp_chat_module.model_whatsapp_request_response,base.group_user,1,1,1,1 -->

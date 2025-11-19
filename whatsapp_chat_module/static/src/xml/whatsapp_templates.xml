@@ -1,0 +1,1519 @@
+<templates id="template" xml:space="preserve">
+    <t t-name="whatsapp_chat_module.whatsapp_web_template">
+        <div class="whatsapp-web-container">
+            <!-- Connection Selector Modal -->
+            <div t-if="state.showConnectionSelector" class="connection-selector-modal">
+                <div class="connection-selector-content">
+                    <div class="connection-selector-header">
+                        <h3>Select WhatsApp Connection</h3>
+                        <p>Choose which WhatsApp Business account to use</p>
+                    </div>
+                    
+                    <div class="connections-list">
+                        <div t-foreach="state.connections" t-as="connection" t-key="connection.id" 
+                             class="connection-item" 
+                             t-att-class="{'selected': connection.id === state.selectedConnection?.id}"
+                             t-on-click="() => this.selectConnection(connection.id)">
+                            <div class="connection-info">
+                                <div class="connection-name">
+                                    <strong t-esc="connection.name"/>
+                                </div>
+                                <div class="connection-phone" t-esc="connection.phone_number"/>
+                                <div class="connection-status" 
+                                     t-att-style="'color: ' + (connection.connection_status === 'connected' ? '#25d366' : '#6b7280')">
+                                    <span class="status-dot" 
+                                          t-att-style="'background-color: ' + (connection.connection_status === 'connected' ? '#25d366' : '#6b7280')"/>
+                                    <t t-esc="connection.connection_status === 'connected' ? 'Connected' : 'Disconnected'"/>
+                                    <span t-if="connection.is_default" class="default-badge">(Default)</span>
+                                </div>
+                            </div>
+                            <div class="connection-actions">
+                                <i t-if="connection.id === state.selectedConnection?.id" class="fa fa-check-circle text-success"/>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div t-if="!state.connections.length" class="no-connections">
+                        <i class="fa fa-exclamation-triangle"/>
+                        <p>No WhatsApp connections found. Please configure a connection first.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- QR Code Modal Popup -->
+            <div t-if="state.showQRModal" class="qr-modal">
+                <div class="qr-modal-content">
+                    <div class="qr-modal-header">
+                        <h3>Scan QR to connect</h3>
+                        <button class="btn btn-link qr-close-btn" t-on-click="() => this.closeQRModal()">
+                            <i class="fa fa-times"/>
+                        </button>
+                    </div>
+                    <div class="qr-modal-body">
+                        <div class="qr-image-container">
+                            <img t-if="state.qrImage" t-att-src="state.qrImage" alt="QR Code" class="qr-image"/>
+                            <div t-if="!state.qrImage" class="loading-spinner">
+                                <i class="fa fa-spinner fa-spin"/>
+                                <p>Waiting for QR…</p>
+                            </div>
+                        </div>
+                        <div t-if="state.banner" class="qr-banner">
+                            <t t-esc="state.banner"/>
+                        </div>
+                        <div t-if="state.error" class="qr-error">
+                            <t t-esc="state.error"/>
+                        </div>
+                        <p class="qr-instructions">Open WhatsApp on your phone → Settings → Linked devices → Link a device</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Connection Switching Loader -->
+            <div t-if="state.switchingConnection" class="connection-switching-loader">
+                <div class="connection-switching-content">
+                    <i class="fa fa-spinner fa-spin"/>
+                    <h3>Switching Connection</h3>
+                    <p>Please wait while we connect to <strong t-esc="state.selectedConnection?.name or 'the selected connection'"/>...</p>
+                </div>
+            </div>
+
+            <!-- Main WhatsApp Interface (Phase 2) -->
+            <div t-if="state.stage == 'ready' or state.stage == 'qr'" 
+                 class="whatsapp-main-interface"
+                 t-att-class="{'blurred-background': state.showQRModal and state.stage == 'ready'}">
+                <!-- Header -->
+               
+                <div class="whatsapp-header">
+                    <div class="header-left">
+                        <button t-on-click="showConnectionSelector" class="btn btn-link connection-btn">
+                            <i class="fa fa-bars"/>
+                            <span t-esc="state.selectedConnection ? state.selectedConnection.name : 'Select Connection'"/>
+                        </button>
+                        <!-- <div class="connection-status" 
+                             t-att-style="'color: ' + getConnectionStatusColor()">
+                            <span class="status-dot" t-att-style="'background-color: ' + getConnectionStatusColor()"/>
+                            <span t-esc="getConnectionStatusText()"/>
+                        </div> -->
+                    </div>
+                    <div class="header-right">
+                        <button t-on-click="refreshData" class="btn btn-link">
+                            <i class="fa fa-refresh"/>
+                        </button>
+                        <!-- <button class="btn btn-primary">
+                            <i class="fa fa-plus"/>
+                            New Chat
+                        </button> -->
+                    </div>
+                </div>
+
+                <!-- Main Content Area -->
+                <div class="whatsapp-main-content">
+                    <!-- Left Sidebar: Conversations -->
+                    <div class="sidebar">
+                        <div class="sidebar-header">
+                            <div class="search-box">
+                                <i class="fa fa-search"/>
+                                <input type="text" 
+                                       placeholder="Search or start new chat..." 
+                                       t-model="state.searchTerm"
+                                       t-on-input="(ev) => this.onSearchInput(ev)"/>
+                            </div>
+                        </div>
+
+                        <!-- Tabs -->
+                        <div class="sidebar-tabs">
+                            <button class="tab-btn active">
+                                <i class="fa fa-comments"/>
+                                <span>Chats</span>
+                                <span class="tab-badge" t-esc="getUnreadCount()"/>
+                            </button>
+                            <!-- <button class="tab-btn">
+                                <i class="fa fa-users"/>
+                                <span>Contacts</span>
+                            </button>
+                            <button class="tab-btn">
+                                <i class="fa fa-star"/>
+                                <span>Starred</span>
+                            </button> -->
+                            
+                            <!-- New Chat Button -->
+                            <div class="sidebar-tabs-right">
+                                <button class="new-chat-btn" 
+                                        t-on-click="toggleContactsPopup"
+                                        t-att-title="'Start New Chat'">
+                                    <i class="fa fa-plus"/>
+                                </button>
+                                
+                                <!-- Contacts Popup -->
+                                <div t-if="state.showContactsPopup" class="contacts-popup">
+                                    <div class="contacts-popup-header">
+                                        <h4>Select Contact</h4>
+                                        <button class="btn btn-link close-popup-btn" t-on-click="toggleContactsPopup">
+                                            <i class="fa fa-times"/>
+                                        </button>
+                                    </div>
+                                    <div class="contacts-popup-search">
+                                        <i class="fa fa-search"/>
+                                        <input type="text" 
+                                               placeholder="Search contacts..." 
+                                               t-model="state.contactsSearchTerm"
+                                               t-on-input="(ev) => this.onContactsSearchInput(ev)"/>
+                                    </div>
+                                    <div class="contacts-popup-list" t-on-scroll="onContactsScroll">
+                                        <div t-if="state.isLoadingContacts and getFilteredContacts().length === 0" class="contacts-loading">
+                                            <i class="fa fa-spinner fa-spin"/>
+                                            <span>Loading contacts...</span>
+                                        </div>
+                                        <div t-if="!state.isLoadingContacts and getFilteredContacts().length === 0" class="no-contacts">
+                                            <i class="fa fa-users"/>
+                                            <p>No contacts found</p>
+                                        </div>
+                                        <div t-foreach="getFilteredContacts()" t-as="contact" t-key="contact.id" 
+                                             class="contact-item"
+                                             t-on-click="() => this.openChatWithContact(contact)">
+                                            <div class="contact-avatar">
+                                                <img t-att-src="contact.profile_picture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
+                                            </div>
+                                            <div class="contact-info">
+                                                <div class="contact-name" t-esc="contact.name or contact.display_name"/>
+                                                <div class="contact-phone" t-esc="contact.phone_number"/>
+                                            </div>
+                                        </div>
+                                        <!-- Loader at the end when loading more contacts -->
+                                        <div t-if="state.isLoadingContacts and getFilteredContacts().length > 0" class="contacts-load-more-loader">
+                                            <i class="fa fa-spinner fa-spin"/>
+                                            <span>Loading more contacts...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Conversations List -->
+                        <div class="conversations-list">
+                            <div t-if="hasNoConversations()" class="no-conversations">
+                                <i class="fa fa-comments"/>
+                                <p>No conversations yet</p>
+                                <small>Send a message to start a conversation</small>
+                            </div>
+                            
+                            <div t-if="hasNoSearchResults()" class="no-conversations">
+                                <i class="fa fa-search"/>
+                                <p>No conversations found</p>
+                                <small>Try a different search term</small>
+                            </div>
+                            
+                            <div t-foreach="state.filteredConversations or []" t-as="conversation" t-key="conversation.id" 
+                                 class="conversation-item"
+                                 t-att-class="{'selected': conversation.id === state.selectedConversation?.id}"
+                                 t-on-click="() => this.selectConversation(conversation.id)">
+                                <div class="conversation-avatar">
+                                    <img t-att-src="conversation.profile_picture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
+                                    <div t-if="conversation.contact_status === 'online'" class="status-indicator online"/>
+                                </div>
+                                <div class="conversation-content">
+                                    <div class="conversation-header">
+                                        <span class="contact-name" t-esc="conversation.contact_name or 'Unknown'"/>
+                                        <span class="last-activity" t-esc="formatLastActivity(conversation.last_activity)"/>
+                                    </div>
+                                    <div class="conversation-preview">
+                                        <span class="last-message" t-esc="conversation.last_message_content or 'No messages yet'"/>
+                                        <span t-if="conversation.unread_count > 0" class="unread-badge" t-esc="conversation.unread_count"/>
+                                    </div>
+                                </div>
+                                <div class="conversation-actions">
+                                    <i t-if="conversation.is_pinned" class="fa fa-thumbtack"/>
+                                    <i t-if="conversation.is_muted" class="fa fa-volume-mute"/>
+                                </div>
+                            </div>
+                            
+                            <!-- Load More Button -->
+                            <div t-if="hasMoreConversations()" class="load-more-container">
+                                <button class="btn btn-link load-more-btn" 
+                                        t-att-disabled="state.pagination.isLoadingMore"
+                                        t-on-click="loadMoreConversations">
+                                    <t t-if="state.pagination.isLoadingMore">
+                                        <i class="fa fa-spinner fa-spin"/> Loading...
+                                    </t>
+                                    <t t-if="!state.pagination.isLoadingMore">
+                                        Load More
+                                    </t>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Panel: Chat Area -->
+                    <div class="chat-panel">
+                        <div t-if="!state.selectedConversation" class="no-chat-selected">
+                            <div class="no-chat-content">
+                                <div class="whatsapp-icon">
+                                    <i class="fab fa-whatsapp"/>
+                                </div>
+                                <h4>WhatsApp Web</h4>
+                                <p>Select a conversation to start messaging</p>
+                                <!-- <button class="btn btn-primary">
+                                    <i class="fa fa-plus"/>
+                                    Start New Chat
+                                </button> -->
+                            </div>
+                        </div>
+
+                        <div t-if="state.selectedConversation" class="chat-container">
+                            <!-- Chat Header -->
+                            <div class="chat-header">
+                                <div class="chat-contact">
+                                    <div class="contact-avatar">
+                                        <img t-att-src="state.selectedConversation.profile_picture" alt="Avatar"/>
+                                        <div class="status-indicator online"/>
+                                    </div>
+                                    <div class="contact-info">
+                                        <h5 t-esc="state.selectedConversation.contact_name"/>
+                                        <span class="contact-status" t-esc="state.selectedConversation.contact_status"/>
+                                    </div>
+                                </div>
+                                
+                                <div class="chat-actions">
+                                    <!-- <button class="btn btn-link">
+                                        <i class="fa fa-phone"/>
+                                    </button> -->
+                                    <button class="btn btn-link">
+                                        <i class="fa fa-video"/>
+                                    </button>
+                                    <!-- <button class="btn btn-link">
+                                        <i class="fa fa-search"/>
+                                    </button> -->
+                                    <!-- <button class="btn btn-link">
+                                        <i class="fa fa-ellipsis-v"/>
+                                    </button> -->
+                                </div>
+                            </div>
+
+                            <!-- Messages Container -->
+                            <div class="messages-container" ref="messagesContainer">
+                                <div t-if="!state.messages.length" class="no-messages">
+                                    <p>No messages yet</p>
+                                    <small>Send a message to start the conversation</small>
+                                </div>
+
+                                <t t-foreach="state.messages" t-as="message" t-key="message.id">
+                                    <t t-if="message.showDayDivider">
+                                        <div class="day-separator">
+                                            <span t-esc="message.dayLabel"/>
+                                        </div>
+                                    </t>
+                                    <div class="message" 
+                                         t-att-class="'message-' + message.direction + ' ' + message.type">
+                                        <t t-if="message.direction === 'inbound'">
+                                            <div class="lead-action-container">
+                                                <button class="lead-action-btn"
+                                                        title="Create CRM Lead"
+                                                        t-on-click="() => this.createLeadFromMessage(message)">
+                                                        Create Lead
+                                                    <i class="fa fa-user-plus"/>
+                                                </button>
+                                            </div>
+                                        </t>
+                                    <div class="message-bubble">
+                                        <!-- Media Display -->
+                                        <div t-if="message.media_url or message.media or (message.message_type and message.message_type !== 'chat' and message.message_type !== 'text')" class="message-media">
+                                            <img t-if="message.message_type === 'image' or message.type === 'image'" 
+                                                 t-att-src="message.media_url or message.media" 
+                                                 class="message-image"
+                                                 t-att-alt="message.content"/>
+                                            <video t-if="message.message_type === 'video' or message.type === 'video'" 
+                                                   t-att-src="message.media_url or message.media" 
+                                                   controls="controls"
+                                                   class="message-video"/>
+                                            <div t-if="message.message_type === 'document' or message.type === 'document'" 
+                                                 class="message-document">
+                                                <i class="fa fa-file"/>
+                                                <span t-esc="message.fileName or message.content or 'Document'"/>
+                                                <a t-if="message.media_url or message.media" 
+                                                   t-att-href="message.media_url or message.media" 
+                                                   target="_blank"
+                                                   class="download-link">Download</a>
+                                            </div>
+                                            <audio t-if="message.message_type === 'audio' or message.type === 'audio'" 
+                                                   t-att-src="message.media_url or message.media" 
+                                                   controls="controls"
+                                                   class="message-audio"/>
+                                        </div>
+                                        
+                                        <!-- Text Content -->
+                                        <div t-if="message.content" class="message-content" t-esc="message.content"/>
+                                        
+                                        <!-- Timestamp and Ack -->
+                                        <div class="message-time">
+                                            <span t-esc="formatMessageTime(message.timestamp)"/>
+                                            <span t-if="message.direction === 'outbound' and message.ack >= 1"
+                                                  t-att-style="'color: ' + getAckColor(message) + '; margin-left: 4px; font-size: 12px; font-weight: bold;'">
+                                                <t t-if="message.ack >= 3">✓✓</t>
+                                                <t t-if="message.ack === 2">✓✓</t>
+                                                <t t-if="message.ack === 1">✓</t>
+                                            </span>
+                                        </div>
+                                        </div>
+                                    </div>
+                                </t>
+                            </div>
+
+                            <!-- Message Input - Only show when conversation is selected -->
+                            <div t-if="state.selectedConversation" class="message-input-container">
+                                <!-- Media Preview Section -->
+                                <div t-if="state.selectedMedia" class="media-preview-container">
+                                    <div class="media-preview-wrapper">
+                                        <!-- Image Preview -->
+                                        <div t-if="state.selectedMedia.type === 'image'" class="media-preview-item">
+                                            <img t-att-src="state.selectedMedia.preview" 
+                                                 class="media-preview-image"
+                                                 alt="Preview"/>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Video Preview -->
+                                        <div t-if="state.selectedMedia.type === 'video'" class="media-preview-item">
+                                            <video t-att-src="state.selectedMedia.preview" 
+                                                   class="media-preview-video"
+                                                   controls="controls"/>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                        
+                                        <!-- Document/Audio Preview -->
+                                        <div t-if="state.selectedMedia.type === 'document' or state.selectedMedia.type === 'audio'" 
+                                             class="media-preview-item file-preview">
+                                            <div class="file-icon">
+                                                <i t-if="state.selectedMedia.type === 'document'" class="fa fa-file"/>
+                                                <i t-if="state.selectedMedia.type === 'audio'" class="fa fa-music"/>
+                                            </div>
+                                            <div class="file-info">
+                                                <span class="file-name" t-esc="state.selectedMedia.file.name"/>
+                                                <span class="file-size" t-esc="formatFileSize(state.selectedMedia.file.size)"/>
+                                            </div>
+                                            <button class="remove-media-btn" t-on-click="removeSelectedMedia">
+                                                <i class="fa fa-times"/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Input Row -->
+                                <div class="input-row">
+                                    <div class="input-tools">
+                                        <button class="btn btn-link">
+                                            <i class="fa fa-smile"/>
+                                        </button>
+                                        <button class="btn btn-link" t-on-click="openMediaSelector">
+                                            <i class="fa fa-paperclip"/>
+                                        </button>
+                                        <input type="file" 
+                                               ref="fileInput" 
+                                               class="whatsapp-file-input"
+                                               style="display: none;"
+                                               t-att-accept="getFileAcceptTypes()"
+                                               t-on-change="(ev) => this.handleFileSelect(ev)"/>
+                                    </div>
+                                    <textarea placeholder="Type a message..."
+                                              t-model="state.messageInput"
+                                              t-on-keypress="event => this.handleKeyPress(event)"
+                                              rows="1"/>
+                                    <button class="btn btn-primary send-btn" 
+                                            t-on-click="sendMessage"
+                                            t-att-disabled="state.mediaUploading">
+                                        <i t-if="state.mediaUploading" class="fa fa-spinner fa-spin"/>
+                                        <i t-if="!state.mediaUploading" class="fa fa-paper-plane"/>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Emoji Panel - Only show when conversation is selected -->
+                            <div t-if="state.selectedConversation and state.showEmojiPanel" class="emoji-panel">
+                                <div class="emoji-category">
+                                    <!-- <div class="emoji-item" t-foreach="this.getEmojis()" t-as="emoji" t-key="emoji" t-on-click="() => this.insertEmoji(emoji)"> -->
+                                    <div class="emoji-item" t-foreach="this.getEmojis()" t-as="emoji" t-key="emoji">
+                                        <span t-esc="emoji"/>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading Overlay -->
+            <div t-if="state.isLoading" class="loading-overlay">
+                <div class="loading-spinner">
+                    <i class="fa fa-spinner fa-spin"/>
+                    <p>Loading WhatsApp...</p>
+                </div>
+            </div>
+        </div>
+
+    
+        <style>
+            /* --- Odoo container normalization: only active while this template is mounted --- */
+            .o_web_client .o_action_manager .o_action .o_content,
+            .o_web_client .o_action_manager .o_action .o_content .o_main_content {
+                height: 100vh !important;
+                overflow: hidden !important;
+            }
+
+            .whatsapp-web-container {
+            height: calc(100vh - 46px); /* Subtract Odoo header height */
+            display: flex;
+            flex-direction: column;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            position: relative;
+            overflow: hidden; /* Prevent scrolling on main container */
+            }
+
+            /* Connection selector Modal */
+            .connection-selector-modal {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.8);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 10; /* Lower z-index to stay within WhatsApp container */
+            }
+
+            /* Connection Switching Loader */
+            .connection-switching-loader {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.85);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 15; /* Higher than connection selector */
+            }
+
+            .connection-switching-content {
+                text-align: center;
+                color: white;
+                padding: 40px;
+            }
+
+            .connection-switching-content i {
+                font-size: 48px;
+                color: #25d366;
+                margin-bottom: 20px;
+                display: block;
+            }
+
+            .connection-switching-content h3 {
+                margin: 0 0 12px 0;
+                font-size: 24px;
+                font-weight: 600;
+                color: white;
+            }
+
+            .connection-switching-content p {
+                margin: 0;
+                font-size: 16px;
+                color: rgba(255, 255, 255, 0.9);
+            }
+
+            .connection-switching-content strong {
+                color: #25d366;
+                font-weight: 600;
+            }
+
+            /* QR Code Modal */
+            .qr-modal {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(0, 0, 0, 0.85);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 20; /* Higher than connection selector */
+                backdrop-filter: blur(2px); /* Subtle backdrop blur */
+                -webkit-backdrop-filter: blur(2px); /* Safari support */
+            }
+
+            .qr-modal-content {
+                background: white;
+                border-radius: 12px;
+                padding: 0;
+                max-width: 400px;
+                width: 90%;
+                max-height: 90vh;
+                overflow-y: auto;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+
+            .qr-modal-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 20px 24px;
+                border-bottom: 1px solid #e9edef;
+            }
+
+            .qr-modal-header h3 {
+                margin: 0;
+                color: #111b21;
+                font-size: 18px;
+            }
+
+            .qr-close-btn {
+                color: #667781;
+                padding: 4px 8px;
+                font-size: 18px;
+                background: none;
+                border: none;
+                cursor: pointer;
+                transition: color 0.2s ease;
+            }
+
+            .qr-close-btn:hover {
+                color: #111b21;
+            }
+
+            .qr-modal-body {
+                padding: 24px;
+                text-align: center;
+            }
+
+            .qr-image-container {
+                margin: 16px 0;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 256px;
+            }
+
+            .qr-image {
+                width: 256px;
+                height: 256px;
+                object-fit: contain;
+                border: 1px solid #e9edef;
+                border-radius: 8px;
+                padding: 8px;
+                background: white;
+            }
+
+            .qr-banner {
+                color: #25d366;
+                margin: 12px 0;
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .qr-error {
+                color: #ef4444;
+                margin: 12px 0;
+                font-size: 14px;
+                font-weight: 500;
+            }
+
+            .qr-instructions {
+                color: #667781;
+                font-size: 13px;
+                margin: 16px 0 0 0;
+                line-height: 1.5;
+            }
+
+            .connection-selector-content {
+                background: white;
+                border-radius: 12px;
+                padding: 24px;
+                max-width: 500px;
+                width: 90%;
+                max-height: 80vh;
+                overflow-y: auto;
+            }
+
+            .connection-selector-header {
+                text-align: center;
+                margin-bottom: 24px;
+            }
+
+            .connection-selector-header h3 {
+                margin: 0 0 8px 0;
+                color: #111b21;
+            }
+
+            .connection-selector-header p {
+                margin: 0;
+                color: #667781;
+            }
+
+            .connections-list {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .connection-item {
+                padding: 16px;
+                border: 1px solid #e9edef;
+                border-radius: 8px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                cursor: pointer;
+                transition: all 0.2s ease;
+            }
+
+            .connection-item:hover {
+                background-color: #f5f6fa;
+                border-color: #25d366;
+            }
+
+            .connection-item.selected {
+                background-color: #e7f3ff;
+                border-color: #25d366;
+                border-width: 2px;
+            }
+
+            .connection-name {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            }
+
+            .connection-name strong {
+                color: #111b21;
+                font-size: 14px;
+            }
+
+            .connection-phone {
+                color: #667781;
+                font-size: 12px;
+                margin-top: 2px;
+            }
+
+            .default-badge {
+                color: #25d366;
+                font-weight: bold;
+                font-size: 12px;
+                margin-left: 4px;
+            }
+
+            .connection-name span {
+                color: #667781;
+                font-size: 12px;
+            }
+
+            .connection-business {
+                color: #667781;
+                font-size: 11px;
+                margin-top: 2px;
+            }
+
+            .connection-status {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+            }
+
+            .status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+            }
+
+            .no-connections {
+                text-align: center;
+                padding: 40px 20px;
+                color: #667781;
+            }
+
+            /* Main Interface */
+            .whatsapp-main-interface {
+                display: flex;
+                flex-direction: column;
+                height: 100vh;
+                min-height: 0; /* enable child scroll sizing */
+                transition: filter 0.3s ease, opacity 0.3s ease;
+            }
+
+            /* Blur background when QR modal appears while logged in */
+            .whatsapp-main-interface.blurred-background {
+                filter: blur(8px);
+                opacity: 0.4;
+                pointer-events: none; /* Prevent interaction when blurred */
+            }
+
+            .whatsapp-header {
+                background-color: #00a884;
+                color: white;
+                padding: 12px 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .header-left {
+                display: flex;
+                align-items: center;
+                gap: 16px;
+            }
+
+            .connection-btn {
+                color: white;
+                text-decoration: none;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                border: none;
+                background: none;
+                cursor: pointer;
+            }
+
+            .whatsapp-main-content {
+                display: flex;
+                flex: 1;
+                min-height: 0;
+            }
+
+        
+            .sidebar {
+                width: 360px;
+                background: white;
+                border-right: 1px solid #e9edef;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .sidebar-header {
+                padding: 16px;
+                background: #f0f2f5;
+            }
+
+            .search-box {
+                position: relative;
+                background: white;
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                padding: 10px 16px;
+            }
+
+            .search-box i {
+                color: #667781;
+                margin-right: 12px;
+            }
+
+            .search-box input {
+                border: none;
+                outline: none;
+                flex: 1;
+                font-size: 14px;
+            }
+
+            .sidebar-tabs {
+                display: flex;
+                background: #f0f2f5;
+                padding: 8px 16px;
+            }
+
+            .tab-btn {
+                background: none;
+                border: none;
+                padding: 8px 16px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                color: #667781;
+                font-size: 13px;
+                border-radius: 20px;
+                transition: all 0.2s ease;
+            }
+
+            .tab-btn.active {
+                background: white;
+                color: #25d366;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }
+
+            .tab-badge {
+                background: #25d366;
+                color: white;
+                border-radius: 10px;
+                padding: 2px 6px;
+                font-size: 10px;
+                min-width: 16px;
+                text-align: center;
+            }
+
+            .conversations-list {
+                flex: 1;
+                overflow-y: auto;
+            }
+
+            .load-more-container {
+                padding: 16px;
+                text-align: center;
+                border-top: 1px solid #e9edef;
+            }
+
+            .load-more-btn {
+                width: 100%;
+                padding: 8px 16px;
+                color: #25d366;
+                background: transparent;
+                border: 1px solid #25d366;
+                border-radius: 20px;
+                cursor: pointer;
+                font-size: 14px;
+                transition: all 0.2s ease;
+            }
+
+            .load-more-btn:hover:not(:disabled) {
+                background: #25d366;
+                color: white;
+            }
+
+            .load-more-btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            .no-conversations {
+                text-align: center;
+                padding: 40px 20px;
+                color: #667781;
+            }
+
+            .no-conversations i {
+                font-size: 48px;
+                margin-bottom: 16px;
+                color: #25d366;
+            }
+
+            .conversation-item {
+                padding: 12px 16px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                transition: background-color 0.2s ease;
+            }
+
+            .conversation-item:hover {
+                background-color: #f5f6fa;
+            }
+
+            .conversation-item.selected {
+                background-color: #e7f3ff;
+                border-right: 3px solid #25d366;
+            }
+
+            .conversation-avatar {
+                position: relative;
+                flex-shrink: 0;
+            }
+
+            .conversation-avatar img {
+                width: 48px;
+                height: 48px;
+                border-radius: 50%;
+                object-fit: cover;
+            }
+
+            .status-indicator {
+                position: absolute;
+                bottom: 2px;
+                right: 2px;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                border: 2px solid white;
+            }
+
+            .status-indicator.online {
+                background-color: #25d366;
+            }
+
+            .conversation-content {
+                flex: 1;
+                min-width: 0;
+            }
+
+            .conversation-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 2px;
+            }
+
+            .contact-name {
+                font-weight: 600;
+                font-size: 14px;
+                color: #111b21;
+            }
+
+            .last-activity {
+                font-size: 11px;
+                color: #667781;
+            }
+
+            .conversation-preview {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .last-message {
+                font-size: 13px;
+                color: #667781;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .unread-badge {
+                background: #25d366;
+                color: white;
+                border-radius: 10px;
+                padding: 2px 6px;
+                font-size: 11px;
+                min-width: 18px;
+                text-align: center;
+            }
+
+            /* Chat Panel */
+            .chat-panel {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                background: #efeae2;
+                position: relative;
+                min-height: 0; /* allow messages container to shrink */
+            }
+
+            .no-chat-selected {
+                flex: 1;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+
+            .no-chat-content {
+                text-align: center;
+                color: #667781;
+            }
+
+            .whatsapp-icon {
+                margin-bottom: 24px;
+            }
+
+            .whatsapp-icon i {
+                font-size: 120px;
+                color: #25d366;
+            }
+
+            .no-chat-content h4 {
+            color: #111b21;
+            margin-bottom: 16px;
+            }
+
+            /* Chat Container */
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 100%;
+                flex: 1;
+                overflow: hidden; /* Prevent overflow */
+                min-height: 0; /* enable child flex scrolling */
+            }
+
+            .chat-header {
+                background: #f0f2f5;
+                padding: 12px 16px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid #e9edef;
+                gap: 12px; /* Space between connection switcher and chat actions */
+            }
+
+            .connection-switcher {
+                display: flex;
+                align-items: center;
+            }
+
+            .connection-switch-btn {
+                background: white !important;
+                border: 1px solid #25d366 !important;
+                color: #25d366 !important;
+                padding: 6px 12px !important;
+                border-radius: 16px !important;
+                font-size: 12px !important;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                transition: all 0.2s ease;
+            }
+
+            .connection-switch-btn:hover {
+                background: #25d366 !important;
+                color: white !important;
+                transform: translateY(-1px);
+            }
+
+            .chat-contact {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            .contact-avatar img {
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                object-fit: cover;
+            }
+
+            .contact-info h5 {
+                margin: 0;
+                font-size: 16px;
+                color: #111b21;
+            }
+
+            .contact-status {
+                font-size: 12px;
+                color: #667781;
+            }
+
+            .chat-actions {
+                display: flex;
+                gap: 8px;
+            }
+
+            .chat-actions .btn {
+                color: #667781;
+            }
+
+            .messages-container {
+                flex: 1;
+                padding: 16px;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                min-height: 0; /* ensure scroll area can shrink */
+            }
+
+            .no-messages {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                color: #667781;
+            }
+
+            .message {
+                display: flex;
+                margin-bottom: 8px;
+                max-width: 50%;
+                position: relative;
+            }
+
+            .message-inbound {
+                align-self: flex-start;
+            }
+
+            .message-outbound {
+                align-self: flex-end;
+                flex-direction: row-reverse;
+            }
+
+            .message-bubble {
+                background: white;
+                padding: 8px 12px;
+                border-radius: 12px;
+                position: relative;
+                word-wrap: break-word;
+            }
+
+            .message-outbound .message-bubble {
+                background: #dcf8c6;
+            }
+
+            .message-time {
+                display: flex;
+                align-items: center;
+                justify-content: flex-end;
+                gap: 4px;
+                font-size: 11px;
+                color: #667781;
+                margin-top: 4px;
+            }
+            
+            .lead-action-container {
+                position: absolute;
+                right: -120px;          /* push away from bubble so full pill fits */
+                top: 50%;
+                transform: translateY(-50%);
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                display: flex;
+                align-items: center;
+            }
+
+            .message-inbound:hover .lead-action-container {
+                opacity: 1;
+            }
+
+            .lead-action-btn {
+                border: none;
+                background: #ffffff;
+                color: #25d366;
+                padding: 6px 14px;
+                border-radius: 999px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-weight: 400;
+                font-size: 12px;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+
+             .lead-action-btn:hover {
+                background: #25d366;
+                color: #ffffff;
+                box-shadow: 0 2px 6px rgba(37, 211, 102, 0.4);
+                transform: scale(1.05);
+            }
+
+            .lead-action-btn i {
+                font-size: 12px;
+            }
+
+            @media (max-width: 768px) {
+                .lead-action-container {
+                    right: -120px;
+                }
+            }
+            
+            .day-separator {
+                width: 100%;
+                display: flex;
+                justify-content: center;
+                margin: 16px 0;
+            }
+
+            .day-separator span {
+                padding: 4px 12px;
+                background: rgba(0, 0, 0, 0.08);
+                border-radius: 16px;
+                color: #54656f;
+                font-size: 12px;
+                text-transform: capitalize;
+            }
+
+            /* Message Media Display */
+            .message-media {
+                margin-bottom: 8px;
+            }
+
+            .message-image {
+                max-width: 100%;
+                max-height: 300px;
+                border-radius: 8px;
+                object-fit: cover;
+                display: block;
+            }
+
+            .message-video {
+                max-width: 100%;
+                max-height: 300px;
+                border-radius: 8px;
+                display: block;
+            }
+
+            .message-document {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px;
+                background: rgba(0,0,0,0.05);
+                border-radius: 4px;
+            }
+
+            .message-document i {
+                font-size: 24px;
+                color: #667781;
+            }
+
+            .message-audio {
+                width: 100%;
+                margin: 8px 0;
+            }
+
+            .message-content {
+                margin-top: 4px;
+            }
+
+            .download-link {
+                margin-left: auto;
+                color: #25d366;
+                text-decoration: none;
+                font-size: 12px;
+            }
+
+            .download-link:hover {
+                text-decoration: underline;
+            }
+
+
+            .message-input-container {
+                background: #f0f2f5;
+                border-top: 1px solid #e9edef;
+                flex-shrink: 0;
+                position: sticky;
+                bottom: 0;
+                z-index: 9;
+            }
+
+            /* Media Preview Container */
+            .media-preview-container {
+                padding: 8px 16px;
+                background: #f0f2f5;
+                border-bottom: 1px solid #e9edef;
+            }
+
+            .media-preview-wrapper {
+                position: relative;
+                max-width: 100%;
+            }
+
+            .media-preview-item {
+                position: relative;
+                display: inline-block;
+                max-width: 300px;
+            }
+
+            .media-preview-image {
+                max-width: 100%;
+                max-height: 200px;
+                border-radius: 8px;
+                object-fit: cover;
+            }
+
+            .media-preview-video {
+                max-width: 100%;
+                max-height: 200px;
+                border-radius: 8px;
+            }
+
+            .file-preview {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px;
+                background: white;
+                border-radius: 8px;
+                border: 1px solid #e9edef;
+            }
+
+            .file-icon {
+                font-size: 32px;
+                color: #667781;
+            }
+
+            .file-info {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+
+            .file-name {
+                font-weight: 500;
+                color: #111b21;
+                font-size: 14px;
+            }
+
+            .file-size {
+                font-size: 12px;
+                color: #667781;
+            }
+
+            .remove-media-btn {
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(0, 0, 0, 0.6);
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 28px;
+                height: 28px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                transition: background 0.2s;
+            }
+
+            .remove-media-btn:hover {
+                background: rgba(0, 0, 0, 0.8);
+            }
+
+            .input-row {
+                padding: 16px;
+                display: flex;
+                align-items: center;
+                gap: 12px;
+            }
+
+            .input-tools {
+                display: flex;
+                gap: 8px;
+            }
+
+            .input-tools .btn {
+                color: #667781;
+            }
+
+            .message-input-container textarea {
+                flex: 1;
+                border: none;
+                outline: none;
+                padding: 12px 16px;
+                border-radius: 20px;
+                background: white;
+                resize: none;
+                font-size: 14px;
+                max-height: 80px;
+                min-height: 20px;
+            }
+
+            .send-btn {
+                background: #25d366;
+                color: white;
+                border: none;
+                border-radius: 50%;
+                width: 48px;
+                height: 48px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                flex-shrink: 0;
+            }
+
+            .send-btn i {
+                font-size: 18px;
+                color: white;
+            }
+
+            .send-btn:hover {
+                background: #128c7e;
+            }
+
+            /* Emoji Panel */
+            .emoji-panel {
+                position: absolute;
+                bottom: 80px;
+                left: 16px;
+                width: 280px;
+                background: white;
+                border-radius: 8px;
+
+
+                padding: 12px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            }
+
+            .emoji-category {
+                display: grid;
+                grid-template-columns: repeat(8, 1fr);
+                gap: 4px;
+            }
+
+            .emoji-item {
+                padding: 8px;
+                text-align: center;
+                cursor: pointer;
+                border-radius: 4px;
+                transition: background-color 0.2s ease;
+            }
+
+            .emoji-item:hover {
+                background-color: #f0f2f5;
+            }
+
+            /* Loading Overlay */
+            .loading-overlay {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background-color: rgba(255, 255, 255, 0.9);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 999;
+            }
+
+            .loading-spinner {
+                text-align: center;
+                color: #25d366;
+            }
+
+            .loading-spinner i {
+                font-size: 48px;
+                margin-bottom: 16px;
+            }
+
+            /* Utility Classes */
+            .btn {
+                padding: 8px 16px;
+                border-radius: 4px;
+                border: none;
+                cursor: pointer;
+                font-size: 14px;
+                transition: all 0.2s ease;
+            }
+
+            .btn-primary {
+                background: #25d366;
+                color: white;
+            }
+
+            .btn-primary:hover {
+                background: #128c7e;
+            }
+
+            .btn-link {
+                background: none;
+                color: #667781;
+                padding: 4px 8px;
+            }
+
+            .btn-link:hover {
+                background: rgba(0,0,0,0.05);
+            }
+
+            .text-success { color: #25d366; }
+            .text-warning { color: #fbbf24; }
+            .text-danger { color: #ef4444; }
+        </style>
+    </t>
+</templates>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- WhatsApp Message Subtype -->
+        <record id="mail_subtype_whatsapp_message" model="mail.message.subtype">
+            <field name="name">WhatsApp Message</field>
+            <field name="description">WhatsApp message sent to customer</field>
+            <field name="internal" eval="True"/>
+            <field name="default" eval="False"/>
+            <field name="sequence" eval="10"/>
+        </record>
+    </data>
+</odoo>

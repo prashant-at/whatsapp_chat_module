@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="whatsapp_web_template" name="WhatsApp Web UI">
+        <div class="whatsapp-web-container">
+            <div class="whatsapp-web-container">
+                <!-- Header -->
+                <div class="whatsapp-header">
+                    <div class="header-left">
+                        <h2>WhatsApp Web</h2>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" id="new-chat-btn">New Chat</button>
+                        <button class="btn btn-secondary" id="settings-btn">Settings</button>
+                    </div>
+                </div>
+                
+                <!-- Main Chat Interface -->
+                <div class="whatsapp-main">
+                    <!-- Left Sidebar - Chat List -->
+                    <div class="chat-sidebar">
+                        <div class="sidebar-header">
+                            <div class="search-box">
+                                <input type="text" id="chat-search" placeholder="Search or start new chat" class="form-control"/>
+                            </div>
+                        </div>
+                        <div class="chat-list" id="chat-list">
+                            <!-- Dynamic conversations will be loaded here -->
+                            <div class="loading-message" style="text-align: center; padding: 20px; color: #666;">
+                                <i class="fa fa-spinner fa-spin"></i> Loading conversations...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Side - Chat Area -->
+                    <div class="chat-area">
+                        <!-- Chat Header -->
+                        <div class="chat-header" id="chat-header">
+                            <div class="contact-info">
+                                <div class="contact-avatar">
+                                    <img id="contact-avatar" src="/web/static/src/img/avatar.png" alt="Avatar"/>
+                                </div>
+                                <div class="contact-details">
+                                    <h4 id="contact-name">Select a conversation</h4>
+                                    <span id="contact-status" class="status">Choose a chat to start messaging</span>
+                                </div>
+                            </div>
+                            <div class="chat-actions">
+                                <button class="btn btn-icon" id="call-btn" title="Voice Call" disabled="disabled">
+                                    <i class="fa fa-phone"></i>
+                                </button>
+                                <button class="btn btn-icon" id="video-btn" title="Video Call" disabled="disabled">
+                                    <i class="fa fa-video-camera"></i>
+                                </button>
+                                <button class="btn btn-icon" id="info-btn" title="Contact Info" disabled="disabled">
+                                    <i class="fa fa-info-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Messages Area -->
+                        <div class="messages-container" id="messages-container">
+                            <!-- Dynamic messages will be loaded here -->
+                            <div class="welcome-message">
+                                <div class="welcome-icon">
+                                    <i class="fa fa-whatsapp"></i>
+                                </div>
+                                <h3>Welcome to WhatsApp Web</h3>
+                                <p>Select a conversation to start messaging</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Message Input -->
+                        <div class="message-input-container" id="message-input-container">
+                            <div class="input-actions">
+                                <button class="btn btn-icon" id="emoji-btn" title="Emoji">
+                                    <i class="fa fa-smile-o"></i>
+                                </button>
+                                <button class="btn btn-icon" id="attach-btn" title="Attach File">
+                                    <i class="fa fa-paperclip"></i>
+                                </button>
+                                <input type="file" id="file-input" style="display: none;" multiple="true"/>
+                            </div>
+                            <div class="message-input">
+                                <textarea id="message-input" placeholder="Type a message" rows="1"></textarea>
+                            </div>
+                            <div class="send-button">
+                                <button class="btn btn-primary" id="send-btn" title="Send">
+                                    <i class="fa fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <style>
+                .whatsapp-web-container {
+                    height: 100vh;
+                    background: #f0f0f0;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                }
+                
+                .whatsapp-header {
+                    background: #075e54;
+                    color: white;
+                    padding: 15px 20px;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                
+                .whatsapp-main {
+                    display: flex;
+                    height: calc(100vh - 60px);
+                }
+                
+                .chat-sidebar {
+                    width: 350px;
+                    background: white;
+                    border-right: 1px solid #e0e0e0;
+                    display: flex;
+                    flex-direction: column;
+                }
+                
+                .sidebar-header {
+                    padding: 15px;
+                    background: #f8f8f8;
+                    border-bottom: 1px solid #e0e0e0;
+                }
+                
+                .search-box input {
+                    width: 100%;
+                    padding: 8px 12px;
+                    border: none;
+                    border-radius: 20px;
+                    background: white;
+                }
+                
+                .chat-list {
+                    flex: 1;
+                    overflow-y: auto;
+                }
+                
+                .chat-item {
+                    padding: 15px;
+                    border-bottom: 1px solid #f0f0f0;
+                    cursor: pointer;
+                }
+                
+                .chat-item:hover {
+                    background: #f8f8f8;
+                }
+                
+                .contact-name {
+                    font-weight: 500;
+                    margin-bottom: 5px;
+                }
+                
+                .last-message {
+                    color: #666;
+                    font-size: 14px;
+                }
+                
+                .chat-area {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    background: #e5ddd5;
+                    background-image: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px);
+                    background-size: 20px 20px;
+                }
+                
+                .chat-header {
+                    background: #ededed;
+                    padding: 10px 20px;
+                    border-bottom: 1px solid #e0e0e0;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+                
+                .contact-info {
+                    display: flex;
+                    align-items: center;
+                }
+                
+                .contact-avatar img {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 50%;
+                    margin-right: 10px;
+                }
+                
+                .contact-details h4 {
+                    margin: 0;
+                    font-size: 16px;
+                }
+                
+                .status {
+                    font-size: 12px;
+                    color: #666;
+                }
+                
+                .chat-actions button {
+                    background: none;
+                    border: none;
+                    margin-left: 10px;
+                    font-size: 18px;
+                    color: #666;
+                }
+                
+                .messages-container {
+                    flex: 1;
+                    padding: 20px;
+                    overflow-y: auto;
+                }
+                
+                .message {
+                    margin-bottom: 10px;
+                    max-width: 70%;
+                }
+                
+                .message.sent {
+                    margin-left: auto;
+                    text-align: right;
+                }
+                
+                .message-bubble {
+                    background: #dcf8c6;
+                    padding: 10px 15px;
+                    border-radius: 18px;
+                    margin-bottom: 5px;
+                    word-wrap: break-word;
+                }
+                
+                .message.received .message-bubble {
+                    background: white;
+                    border: 1px solid #e0e0e0;
+                }
+                
+                .message-time {
+                    font-size: 11px;
+                    color: #666;
+                }
+                
+                .welcome-message {
+                    text-align: center;
+                    margin-top: 100px;
+                    color: #666;
+                }
+                
+                .welcome-icon i {
+                    font-size: 48px;
+                    color: #25d366;
+                    margin-bottom: 20px;
+                }
+                
+                .message-input-container {
+                    padding: 15px 20px;
+                    background: white;
+                    border-top: 1px solid #e0e0e0;
+                    display: flex;
+                    align-items: center;
+                }
+                
+                .input-actions {
+                    margin-right: 10px;
+                }
+                
+                .input-actions button {
+                    background: none;
+                    border: none;
+                    margin-right: 10px;
+                    font-size: 18px;
+                    color: #666;
+                }
+                
+                .message-input {
+                    flex: 1;
+                }
+                
+                .message-input textarea {
+                    width: 100%;
+                    border: none;
+                    resize: none;
+                    padding: 10px;
+                    border-radius: 20px;
+                    background: #f8f8f8;
+                }
+                
+                .send-button button {
+                    background: #25d366;
+                    border: none;
+                    border-radius: 50%;
+                    width: 45px;
+                    height: 45px;
+                    color: white;
+                    font-size: 18px;
+                    margin-left: 10px;
+                }
+                
+                .btn-primary {
+                    background-color: #25d366;
+                    border-color: #25d366;
+                }
+                
+                .btn-primary:hover {
+                    background-color: #128c7e;
+                    border-color: #128c7e;
+                }
+            </style>
+        </div>
+    </template>
+</odoo>

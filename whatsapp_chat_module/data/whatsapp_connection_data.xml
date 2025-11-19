@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Default WhatsApp Connections -->
+    <record id="whatsapp_connection_business" model="whatsapp.connection">
+        <field name="name">sconnection</field>
+        <field name="from_field">+91 9081045453</field>
+        <field name="api_key">ec784e828cc58a317a579e14e5021e348eaea5e4babde0e2844c909a6c6a31fc</field>
+        <field name="is_default">false</field>
+    </record>
+    
+    <!-- Connection specifically for current user prashant panchani -->
+    <record id="whatsapp_connection_prashant" model="whatsapp.connection">
+        <field name="name">Pconnection</field>
+        <field name="from_field">+91 9157000128</field>
+        <field name="api_key">96c0aa6604d5ea184e6e8dd7abda30d2d12d426d3985733ba2cc6db5a3178d7c</field>
+        <field name="is_default">false</field>
+    </record>
+</odoo>
+
