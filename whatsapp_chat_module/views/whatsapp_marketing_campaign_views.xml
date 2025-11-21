@@ -82,9 +82,8 @@
                         </group>
                         <notebook>
                             <page string="Content" name="content">
-                                <field name="body" widget="html" 
-                                       placeholder="Enter your campaign message here..."
-                                       options="{'rows': 15, 'cols': 80}"/>
+                                <field name="body" widget="html" class="oe-bordered-editor"
+                                    options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
                                 <field name="attachment_ids" widget="many2many_binary"/>
                             </page>
                         </notebook>

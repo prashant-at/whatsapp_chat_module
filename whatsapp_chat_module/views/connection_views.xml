@@ -39,6 +39,17 @@
         </field>
     </record>
 
+    <record id="view_whatsapp_connection_tree_wizard" model="ir.ui.view">
+        <field name="name">whatsapp.connection.tree.wizard</field>
+        <field name="model">whatsapp.connection</field>
+        <field name="arch" type="xml">
+            <tree string="WhatsApp Connections">
+                <field name="name"/>
+                <field name="from_field"/>
+            </tree>
+        </field>
+    </record>
+    
     <record id="action_whatsapp_connection" model="ir.actions.act_window">
         <field name="name">WhatsApp Connections</field>
         <field name="res_model">whatsapp.connection</field>

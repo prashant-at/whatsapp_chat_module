@@ -352,8 +352,6 @@ export class SocketService {
                 return;
             }
 
-        
-
             // Execute server-returned actions: act_window (refresh popup) or display_notification
             const actionService = window.odoo?.env?.services?.action || window.odoo?.__env__?.services?.action;
             if (actionService && (result.type === 'ir.actions.act_window' || result.tag === 'display_notification')) {

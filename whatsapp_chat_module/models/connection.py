@@ -84,12 +84,40 @@ class WhatsAppConnection(models.Model):
         
         return super().create(vals)
 
+    # def write(self, vals):
+    #     """Handle default connection updates"""
+    #     if vals.get('is_default'):
+    #         # Unset other default connections
+    #         self.search([('is_default', '=', True)]).write({'is_default': False})
+    #     return super().write(vals)
     def write(self, vals):
-        """Handle default connection updates"""
+        """Handle default connection updates + clear invalid user defaults"""
+        # Keep old authorized persons (before write)
+        old_auth_map = {rec.id: rec.authorized_person_ids.ids for rec in self}
+        res = super().write(vals)
+        # --- 1. Handle global default toggle ---
         if vals.get('is_default'):
-            # Unset other default connections
-            self.search([('is_default', '=', True)]).write({'is_default': False})
-        return super().write(vals)
+            # Unset other defaults (exclude records being written)
+            self.search([
+                ('is_default', '=', True),
+                ('id', 'not in', self.ids)  # Handle recordset case
+            ]).write({'is_default': False})
+        # --- 2. Clear user defaults if they were removed from authorized_person_ids ---
+        if 'authorized_person_ids' in vals:
+            for connection in self:
+                old_users = set(old_auth_map.get(connection.id, []))
+                new_users = set(connection.authorized_person_ids.ids)
+                # Users removed
+                removed_users = old_users - new_users
+                if removed_users:
+                    users = self.env['res.users'].browse(list(removed_users))
+                    # Clear their default connection if set to this
+                    users.filtered(
+                        lambda u: u.whatsapp_default_connection_id.id == connection.id
+                    ).write({
+                        'whatsapp_default_connection_id': False
+                    })
+        return res
 
     @api.model
     def get_default_connection(self):
@@ -394,7 +422,10 @@ class WhatsAppConnection(models.Model):
     def confirm_socket_connected(self):
         """Called by frontend when socket is connected - releases the wait lock"""
         self.ensure_one()
+        if not self._check_authorization():
+            raise UserError(_("You are not authorized to use this connection."))
+        
         # Force commit to make it visible immediately
-        self.socket_connection_ready = True
-        self.env.cr.commit()  # Commit immediately so Python can see it
+        self.sudo().socket_connection_ready = True
+        self.sudo().env.cr.commit()  # Commit immediately so Python can see it
         _logger.info(f"[Connection] Socket connection confirmed for {self.name} (ID: {self.id})")

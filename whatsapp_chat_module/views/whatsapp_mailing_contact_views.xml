@@ -103,7 +103,7 @@
                                 </div>
                                 <div class="o_kanban_record_body">
                                     <div>
-                                        <i class="fa fa-phone"/> <field name="mobile"/>
+                                        <i class="fa fa-phone" title="Mobile"/> <field name="mobile"/>
                                     </div>
                                     <field name="list_ids" widget="many2many_tags"/>
                                 </div>

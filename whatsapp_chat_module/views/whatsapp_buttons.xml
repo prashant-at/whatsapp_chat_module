@@ -60,19 +60,4 @@
         </field>
     </record>
 
-
-    <!-- WhatsApp Button for CRM Leads -->
-    <!-- <record model="ir.ui.view" id="whatsapp_button_crm_lead">
-        <field name="name">CRM Lead WhatsApp Button</field>
-        <field name="model">crm.lead</field>
-        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
-        <field name="arch" type="xml">
-            <xpath expr="//form/header/button[@name='action_set_won']" position="after">
-                <button class="oe_highlight" icon="fa-whatsapp" 
-                        name="%(whatsapp_chat_module.action_whatsapp_simple_wizard)d" 
-                        string="WhatsApp Chat" type="action"/>
-            </xpath>
-        </field>
-    </record> -->
-
 </odoo>

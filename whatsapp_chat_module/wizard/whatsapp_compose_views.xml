@@ -17,7 +17,8 @@
                                required="1"
                                placeholder="Select WhatsApp connection to send from..."
                                help="Select the WhatsApp connection to send messages from. Default connection is automatically selected."
-                               options="{'no_create': True,'no_open': True}"/>
+                               options="{'no_create': True,'no_open': True}"
+                               context="{'tree_view_ref': 'whatsapp_chat_module.view_whatsapp_connection_tree_wizard'}"/>
                         
                         <!-- Recipients -->
                         <label for="partner_ids" string="Recipients"/>

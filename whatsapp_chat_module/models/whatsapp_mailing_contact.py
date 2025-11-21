@@ -72,9 +72,16 @@ class WhatsAppMailingContact(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         """Normalize mobile numbers before creating"""
+
+        list_ids = self.env.context.get('default_list_ids', [])
+
         for vals in vals_list:
             if 'mobile' in vals and vals['mobile']:
                 vals['mobile'] = self._normalize_phone(vals['mobile'])
+
+            if list_ids and 'list_ids' not in vals:
+                vals['list_ids'] = [(6, 0, list_ids)]
+
         return super().create(vals_list)
 
     def write(self, vals):

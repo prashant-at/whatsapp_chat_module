@@ -14,28 +14,6 @@
                   parent="menu_whatsapp_chat_root"
                   groups="whatsapp_chat_module.group_whatsapp_manager"
                   sequence="1"/>
-
-        <!-- Conversations -->
-        <!-- <menuitem id="menu_whatsapp_conversations" 
-                  name="💬 Conversations" 
-                  parent="menu_whatsapp_chat_root" 
-                  action="action_whatsapp_conversation" 
-                  sequence="10"/> -->
-
-        <!-- Messages -->
-        <!-- <menuitem id="menu_whatsapp_messages" 
-                  name="📨 Messages" 
-                  parent="menu_whatsapp_chat_root" 
-                  action="action_whatsapp_message" 
-                  sequence="20"/> -->
-
-        <!-- Contacts -->
-        <!-- <menuitem id="menu_whatsapp_contacts" 
-                  name="👥 Contacts" 
-                  parent="menu_whatsapp_chat_root" 
-                  action="action_whatsapp_contact" 
-                  sequence="30"/> -->
-
         <!-- Settings Submenu (Under Settings > Technical) -->
         <menuitem id="menu_whatsapp_settings" 
                   name="WhatsApp Settings" 
@@ -50,20 +28,6 @@
                   action="action_whatsapp_connection"
                   groups="whatsapp_chat_module.group_whatsapp_admin"
                   sequence="10"/>
-
-        <!-- API Service Menu -->
-        <!-- <menuitem id="menu_whatsapp_api_service" 
-                  name="API Service" 
-                  parent="menu_whatsapp_settings" 
-                  action="action_whatsapp_api_service" 
-                  sequence="20"/> -->
-
-        <!-- Request/Response Menu -->
-        <!-- <menuitem id="menu_whatsapp_request_response" 
-                  name="Request/Response" 
-                  parent="menu_whatsapp_settings" 
-                  action="action_whatsapp_request_response" 
-                  sequence="30"/> -->
 
         <!-- WhatsApp Templates Menu -->
         <menuitem id="menu_whatsapp_template_settings" 

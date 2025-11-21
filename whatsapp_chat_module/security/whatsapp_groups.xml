@@ -4,6 +4,8 @@
     <record id="module_category_whatsapp" model="ir.module.category">
         <field name="name">WhatsApp</field>
         <field name="sequence">100</field>
+        <field name="parent_id" ref="base.module_category_marketing"/> <!-- SAFE -->
+
     </record>
 
     <!-- WhatsApp User Group - Send Only -->
@@ -29,10 +31,3 @@
         <field name="comment">Full access: create/edit connections, manage all WhatsApp features, and access user WhatsApp Connections tab.</field>
     </record>
 </odoo>
-
-<!-- access_whatsapp_contact,whatsapp.contact,whatsapp_chat_module.model_whatsapp_contact,base.group_user,1,1,1,1
-access_whatsapp_message,whatsapp.message,whatsapp_chat_module.model_whatsapp_message,base.group_user,1,1,1,1
-access_whatsapp_conversation,whatsapp.conversation,whatsapp_chat_module.model_whatsapp_conversation,base.group_user,1,1,1,1 -->
-<!-- access_whatsapp_api_service,whatsapp.api.service,whatsapp_chat_module.model_whatsapp_api_service,base.group_user,1,1,1,1 -->
-<!-- access_whatsapp_stage,whatsapp.stage,whatsapp_chat_module.model_whatsapp_stage,base.group_user,1,1,1,1 -->
-<!-- access_whatsapp_request_response,whatsapp.request.response,whatsapp_chat_module.model_whatsapp_request_response,base.group_user,1,1,1,1 -->

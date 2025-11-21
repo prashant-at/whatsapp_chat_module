@@ -67,14 +67,6 @@ class WhatsAppMarketingCampaign(models.Model):
         help="Domain to filter recipients when not using mailing lists"
     )
     
-    # mailing_list_ids = fields.Many2many(
-    #     'mailing.list',
-    #     'whatsapp_campaign_mailing_list_rel',
-    #     'campaign_id',
-    #     'list_id',
-    #     string='Mailing Lists',
-    #     help="Mailing lists to send the campaign to (only when Recipients Model is Mailing List)"
-    # )
     
     whatsapp_list_ids = fields.Many2many(
         'whatsapp.mailing.list',
@@ -84,13 +76,6 @@ class WhatsAppMarketingCampaign(models.Model):
         string='WhatsApp Mailing Lists',
         help="WhatsApp mailing lists to send the campaign to (only when Recipients Model is WhatsApp Mailing List)"
     )
-    
-    # use_whatsapp_lists = fields.Boolean(
-    #     string='Use WhatsApp Lists',
-    #     compute='_compute_use_whatsapp_lists',
-    #     store=False,
-    #     help="Whether this campaign uses WhatsApp mailing lists"
-    # )
     
     from_connection_id = fields.Many2one(
         'whatsapp.connection',
@@ -105,7 +90,7 @@ class WhatsAppMarketingCampaign(models.Model):
         help="Select a template to load the campaign body"
     )
     
-    body = fields.Text(
+    body = fields.Html(
         'Campaign Body',
         help="Message content to send (plain text)"
     )
@@ -228,17 +213,7 @@ class WhatsAppMarketingCampaign(models.Model):
         if record._name == 'whatsapp.mailing.contact':
             if hasattr(record, 'mobile') and record.mobile:
                 return record.mobile
-            # elif record.partner_id:
-            #     return record.partner_id.mobile or record.partner_id.phone
-        # Try mailing.contact
-        # elif record._name == 'mailing.contact':
-        #     if hasattr(record, 'mobile') and record.mobile:
-        #         return record.mobile
-            # elif hasattr(record, 'phone') and record.phone:
-            #     return record.phone
-            # elif record.partner_id:
-            #     return record.partner_id.mobile or record.partner_id.phone
-        # Try res.partner
+    
         elif record._name == 'res.partner':
             return record.mobile or record.phone
         # Try other models with mobile/phone fields
@@ -247,8 +222,7 @@ class WhatsAppMarketingCampaign(models.Model):
                 return record.mobile
             elif hasattr(record, 'phone') and record.phone:
                 return record.phone
-            # elif hasattr(record, 'partner_id') and record.partner_id:
-            #     return record.partner_id.mobile or record.partner_id.phone
+            
         return None
 
     def _get_recipients(self):
@@ -314,8 +288,8 @@ class WhatsAppMarketingCampaign(models.Model):
         if self.template_id:
             # Load template body (plain text from HTML)
             if self.template_id.body_html:
-                soup = BeautifulSoup(self.template_id.body_html, 'html.parser')
-                self.body = soup.get_text(separator=' ')
+                
+                self.body = self.template_id.body_html
             else:
                 self.body = ''
         else:
@@ -344,13 +318,7 @@ class WhatsAppMarketingCampaign(models.Model):
             raise UserError(_("Please enter campaign body"))
         if not self.mailing_model_id:
             raise UserError(_("Please select a recipients model"))
-        # if self.mailing_on_mailing_list:
-        #     if self.use_whatsapp_lists:
-        #         if not self.whatsapp_list_ids:
-        #             raise UserError(_("Please select WhatsApp mailing lists"))
-        #     else:
-        #         if not self.mailing_list_ids:
-        #             raise UserError(_("Please select mailing lists"))
+        
         if self.mailing_on_mailing_list:
             if not self.whatsapp_list_ids:
                 raise UserError(_("Please select WhatsApp mailing lists"))
@@ -370,9 +338,6 @@ class WhatsAppMarketingCampaign(models.Model):
         recipients = self._get_recipients()
         if not recipients:
             raise UserError(_("No valid phone numbers found in selected mailing lists"))
-        
-        # Update state
-        # self.write({'state': 'sending', 'sent_count': 0, 'failed_count': 0})
         
         # Send to first recipient to check authentication
         first_result = self._send_to_recipient_via_api(
@@ -940,17 +905,7 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
             test_phone_to=self.phone_to.strip()
         )
         
-        # if result.get('success'):
-        #     return {
-        #         'type': 'ir.actions.client',
-        #         'tag': 'display_notification',
-        #         'params': {
-        #             'title': _('Test Sent'),
-        #             'message': _('Test message sent to %s') % self.phone_to,
-        #             'type': 'success',
-        #         }
-        #     }
-        # else:
+     
         #     raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
         if result.get('success'):
             # Send bus notification to close popup (like campaign does)

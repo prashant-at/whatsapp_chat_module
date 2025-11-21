@@ -17,7 +17,6 @@
             'security/whatsapp_groups.xml',
             'security/ir.model.access.csv',
             'security/whatsapp_connection_security.xml',
-            # 'data/stage_data.xml',
             'data/mail_subtype_data.xml',
             'data/whatsapp_connection_data.xml',
             'views/connection_views.xml',
@@ -29,12 +28,12 @@
             'views/whatsapp_mailing_contact_views.xml',
             'views/whatsapp_mailing_list_views.xml',
             'views/whatsapp_mailing_contact_import_views.xml',
-            'views/menu_views.xml',
             'views/res_users_views.xml',
             'wizard/whatsapp_compose_views.xml',
             'wizard/whatsapp_qr_popup_views.xml',
             'views/whatsapp_buttons.xml',
-            'views/whatsapp_web_template.xml',
+            # 'views/whatsapp_web_template.xml',
+            'views/menu_views.xml',
         ],
     "assets": {
     "web.assets_backend": [

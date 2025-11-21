@@ -6,10 +6,6 @@
         <field name="model">res.users</field>
         <field name="inherit_id" ref="base.view_users_form"/>
         <field name="arch" type="xml">
-            <!-- Add default connection field in the Access Rights page -->
-            <!-- <xpath expr="//page[@name='access_rights']//field[@name='groups_id']" position="after">
-               
-            </xpath> -->
             
             <!-- Add WhatsApp Connections tab - Admin only -->
             <xpath expr="//notebook" position="inside">

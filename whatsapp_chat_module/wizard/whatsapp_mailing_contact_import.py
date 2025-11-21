@@ -190,12 +190,16 @@ class WhatsAppMailingContactImport(models.TransientModel):
     def action_open_base_import(self):
         """Open the base import wizard to import WhatsApp mailing contacts with a file."""
         self.ensure_one()
+
+        context = self.env.context.copy()
+        if self.whatsapp_list_ids:
+            context['default_list_ids'] = self.whatsapp_list_ids.ids
         return {
             'type': 'ir.actions.client',
             'tag': 'import',
             'name': _('Import WhatsApp Mailing Contacts'),
             'params': {
-                'context': self.env.context,
+                'context': context,
                 'model': 'whatsapp.mailing.contact',
             }
         }

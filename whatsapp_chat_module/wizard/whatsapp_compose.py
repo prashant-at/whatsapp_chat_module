@@ -107,19 +107,25 @@ class WhatsappCompose(models.TransientModel):
                 result['from_number'] = default_connection.id
             
             # Find default WhatsApp template
-            # First, try to use model-specific method (like email templates do)
-            default_template = None
-            if hasattr(record, '_find_whatsapp_template'):
-                try:
-                    default_template = record._find_whatsapp_template()
-                except Exception as e:
-                    _logger.warning(f"Error calling _find_whatsapp_template on {active_model}: {str(e)}")
+            # SIMPLIFIED: Just get first template for the model (no state-based selection)
+            # OLD LOGIC (commented out): State-based template selection using model-specific method
+            # default_template = None
+            # if hasattr(record, '_find_whatsapp_template'):
+            #     try:
+            #         default_template = record._find_whatsapp_template()
+            #     except Exception as e:
+            #         _logger.warning(f"Error calling _find_whatsapp_template on {active_model}: {str(e)}")
+            # 
+            # # Fallback: search for first template if model method didn't return one
+            # if not default_template:
+            #     default_template = self.env['whatsapp.template'].search([
+            #         ('model', '=', active_model)
+            #     ], order='id', limit=1)
             
-            # Fallback: search for first template if model method didn't return one
-            if not default_template:
-                default_template = self.env['whatsapp.template'].search([
-                    ('model', '=', active_model)
-                ], order='id', limit=1)
+            # NEW LOGIC: Just get first template for the model (no state-based selection)
+            default_template = self.env['whatsapp.template'].search([
+                ('model', '=', active_model)
+            ], order='id', limit=1)
             
             if default_template:
                 result['template_id'] = default_template.id

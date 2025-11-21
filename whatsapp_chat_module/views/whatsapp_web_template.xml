@@ -2,98 +2,7 @@
 <odoo>
     <template id="whatsapp_web_template" name="WhatsApp Web UI">
         <div class="whatsapp-web-container">
-            <div class="whatsapp-web-container">
-                <!-- Header -->
-                <div class="whatsapp-header">
-                    <div class="header-left">
-                        <h2>WhatsApp Web</h2>
-                    </div>
-                    <div class="header-right">
-                        <button class="btn btn-primary" id="new-chat-btn">New Chat</button>
-                        <button class="btn btn-secondary" id="settings-btn">Settings</button>
-                    </div>
-                </div>
-                
-                <!-- Main Chat Interface -->
-                <div class="whatsapp-main">
-                    <!-- Left Sidebar - Chat List -->
-                    <div class="chat-sidebar">
-                        <div class="sidebar-header">
-                            <div class="search-box">
-                                <input type="text" id="chat-search" placeholder="Search or start new chat" class="form-control"/>
-                            </div>
-                        </div>
-                        <div class="chat-list" id="chat-list">
-                            <!-- Dynamic conversations will be loaded here -->
-                            <div class="loading-message" style="text-align: center; padding: 20px; color: #666;">
-                                <i class="fa fa-spinner fa-spin"></i> Loading conversations...
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Right Side - Chat Area -->
-                    <div class="chat-area">
-                        <!-- Chat Header -->
-                        <div class="chat-header" id="chat-header">
-                            <div class="contact-info">
-                                <div class="contact-avatar">
-                                    <img id="contact-avatar" src="/web/static/src/img/avatar.png" alt="Avatar"/>
-                                </div>
-                                <div class="contact-details">
-                                    <h4 id="contact-name">Select a conversation</h4>
-                                    <span id="contact-status" class="status">Choose a chat to start messaging</span>
-                                </div>
-                            </div>
-                            <div class="chat-actions">
-                                <button class="btn btn-icon" id="call-btn" title="Voice Call" disabled="disabled">
-                                    <i class="fa fa-phone"></i>
-                                </button>
-                                <button class="btn btn-icon" id="video-btn" title="Video Call" disabled="disabled">
-                                    <i class="fa fa-video-camera"></i>
-                                </button>
-                                <button class="btn btn-icon" id="info-btn" title="Contact Info" disabled="disabled">
-                                    <i class="fa fa-info-circle"></i>
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Messages Area -->
-                        <div class="messages-container" id="messages-container">
-                            <!-- Dynamic messages will be loaded here -->
-                            <div class="welcome-message">
-                                <div class="welcome-icon">
-                                    <i class="fa fa-whatsapp"></i>
-                                </div>
-                                <h3>Welcome to WhatsApp Web</h3>
-                                <p>Select a conversation to start messaging</p>
-                            </div>
-                        </div>
-                        
-                        <!-- Message Input -->
-                        <div class="message-input-container" id="message-input-container">
-                            <div class="input-actions">
-                                <button class="btn btn-icon" id="emoji-btn" title="Emoji">
-                                    <i class="fa fa-smile-o"></i>
-                                </button>
-                                <button class="btn btn-icon" id="attach-btn" title="Attach File">
-                                    <i class="fa fa-paperclip"></i>
-                                </button>
-                                <input type="file" id="file-input" style="display: none;" multiple="true"/>
-                            </div>
-                            <div class="message-input">
-                                <textarea id="message-input" placeholder="Type a message" rows="1"></textarea>
-                            </div>
-                            <div class="send-button">
-                                <button class="btn btn-primary" id="send-btn" title="Send">
-                                    <i class="fa fa-paper-plane"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <style>
+         <style>
                 .whatsapp-web-container {
                     height: 100vh;
                     background: #f0f0f0;
@@ -309,6 +218,99 @@
                     border-color: #128c7e;
                 }
             </style>
+            
+            <div class="whatsapp-web-container">
+                <!-- Header -->
+                <div class="whatsapp-header">
+                    <div class="header-left">
+                        <h2>WhatsApp Web</h2>
+                    </div>
+                    <div class="header-right">
+                        <button class="btn btn-primary" id="new-chat-btn">New Chat</button>
+                        <button class="btn btn-secondary" id="settings-btn">Settings</button>
+                    </div>
+                </div>
+                
+                <!-- Main Chat Interface -->
+                <div class="whatsapp-main">
+                    <!-- Left Sidebar - Chat List -->
+                    <div class="chat-sidebar">
+                        <div class="sidebar-header">
+                            <div class="search-box">
+                                <input type="text" id="chat-search" placeholder="Search or start new chat" class="form-control"/>
+                            </div>
+                        </div>
+                        <div class="chat-list" id="chat-list">
+                            <!-- Dynamic conversations will be loaded here -->
+                            <div class="loading-message" style="text-align: center; padding: 20px; color: #666;">
+                                <i class="fa fa-spinner fa-spin"></i> Loading conversations...
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Right Side - Chat Area -->
+                    <div class="chat-area">
+                        <!-- Chat Header -->
+                        <div class="chat-header" id="chat-header">
+                            <div class="contact-info">
+                                <div class="contact-avatar">
+                                    <img id="contact-avatar" src="/web/static/src/img/avatar.png" alt="Avatar"/>
+                                </div>
+                                <div class="contact-details">
+                                    <h4 id="contact-name">Select a conversation</h4>
+                                    <span id="contact-status" class="status">Choose a chat to start messaging</span>
+                                </div>
+                            </div>
+                            <div class="chat-actions">
+                                <button class="btn btn-icon" id="call-btn" title="Voice Call" disabled="disabled">
+                                    <i class="fa fa-phone"></i>
+                                </button>
+                                <button class="btn btn-icon" id="video-btn" title="Video Call" disabled="disabled">
+                                    <i class="fa fa-video-camera"></i>
+                                </button>
+                                <button class="btn btn-icon" id="info-btn" title="Contact Info" disabled="disabled">
+                                    <i class="fa fa-info-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Messages Area -->
+                        <div class="messages-container" id="messages-container">
+                            <!-- Dynamic messages will be loaded here -->
+                            <div class="welcome-message">
+                                <div class="welcome-icon">
+                                    <i class="fa fa-whatsapp"></i>
+                                </div>
+                                <h3>Welcome to WhatsApp Web</h3>
+                                <p>Select a conversation to start messaging</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Message Input -->
+                        <div class="message-input-container" id="message-input-container">
+                            <div class="input-actions">
+                                <button class="btn btn-icon" id="emoji-btn" title="Emoji">
+                                    <i class="fa fa-smile-o"></i>
+                                </button>
+                                <button class="btn btn-icon" id="attach-btn" title="Attach File">
+                                    <i class="fa fa-paperclip"></i>
+                                </button>
+                                <input type="file" id="file-input" style="display: none;" multiple="true"/>
+                            </div>
+                            <div class="message-input">
+                                <textarea id="message-input" placeholder="Type a message" rows="1"></textarea>
+                            </div>
+                            <div class="send-button">
+                                <button class="btn btn-primary" id="send-btn" title="Send">
+                                    <i class="fa fa-paper-plane"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+           
         </div>
     </template>
 </odoo>
