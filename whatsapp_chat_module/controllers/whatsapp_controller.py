@@ -13,9 +13,16 @@ _logger = logging.getLogger(__name__)
 class WhatsAppController(http.Controller):
     
     # Base URL for your Node.js service
-    NODE_SERVICE_URL = 'http://localhost:3000'  # Update this to your Node.js service URL
-    
-    @http.route('/whatsapp/create_lead_action', type='json', auth='user')
+    # NODE_SERVICE_URL = 'http://localhost:3000'  # Update this to your Node.js service URL
+    @classmethod
+    def _get_backend_url(cls):
+        """Get backend URL from system parameter"""
+        return request.env['ir.config_parameter'].sudo().get_param(
+            'whatsapp_chat_module.backend_api_url',
+            'http://localhost:3000'
+        )
+
+    @http.route('/whatsapp/create_lead_action', type='json', auth='user' , csrf=True)
     def create_lead_action(self, **payload):
         """Return an action that opens the CRM lead form prefilled with WhatsApp data"""
         message_direction = payload.get('message_direction')

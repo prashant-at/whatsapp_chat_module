@@ -61,7 +61,11 @@ export class WhatsAppWebClientAction extends Component {
 
     _setupSocketListeners() {
         this._unsubscribe.push(socketService.on('status', (data) => {
+            console.log("status event data",data)
             try {
+                if(data.type === "qr_code"){
+                    this._handleQRCode(data.data)
+                }
                 const type = data?.type || data?.status;
                 this.state.connectionStatus = type || 'unknown';
                 if (type === 'authenticated') {
@@ -92,9 +96,11 @@ export class WhatsAppWebClientAction extends Component {
                     this.state.showQRModal = true;
                     this.updateConnectionStatuses();
                 } else if (type === 'qr_code_mismatch') {
-                    this.state.error = data?.message || 'QR code mismatch. Please try again.';
-                    this.state.stage = 'qr';
-                    this.state.showQRModal = true;
+                    try {
+                        this._handlePhoneMismatch(data);
+                    } catch (error) {
+                        console.error("[WA] Error in phone mismatch handler:", error.message || error);
+                    }
                 } else if (type === 'auth_failure') {
                     this.state.error = data?.message || 'Authentication failed';
                     this.state.needsAuth = true;
@@ -118,8 +124,16 @@ export class WhatsAppWebClientAction extends Component {
             }
         }));
         this._unsubscribe.push(socketService.on('chat', (chatData) => {
+            console.log("chat event",chatData)
             try {
                 this.handleChatUpdate(chatData);
+            } catch (error) {
+                console.error("[WA] Error in chat handler:", error.message || error);
+            }
+        }));
+        this._unsubscribe.push(socketService.on('message', (messageData) => {
+            try {
+                this.handleMessageEvent(messageData);
             } catch (error) {
                 console.error("[WA] Error in chat handler:", error.message || error);
             }
@@ -138,13 +152,21 @@ export class WhatsAppWebClientAction extends Component {
                 console.error("[WA] Error in phone mismatch handler:", error.message || error);
             }
         }));
-        this._unsubscribe.push(socketService.on('message', (msg) => {
+        this._unsubscribe.push(socketService.on('contact', (contactData) => {
+            console.log("contact event",contactData)
             try {
-                this.handleMessageEvent(msg);
+                this.handleContactEvent(contactData);
             } catch (error) {
-                console.error("[WA] Error in message handler:", error.message || error);
+                console.error("[WA] Error in contact handler:", error.message || error);
             }
         }));
+        // this._unsubscribe.push(socketService.on('message', (msg) => {
+        //     try {
+        //         this.handleMessageEvent(msg);
+        //     } catch (error) {
+        //         console.error("[WA] Error in message handler:", error.message || error);
+        //     }
+        // }));
     }
 
     _handleQRCode(data) {
@@ -154,18 +176,18 @@ export class WhatsAppWebClientAction extends Component {
         }
         this.state.stage = 'qr';
         this.state.showQRModal = true;
-        this.state.isLoading = false;
+        // this.state.isLoading = false;
     }
 
     _handlePhoneMismatch(data) {
-        const img = data?.qrCode || '';
+        const img = data?.data?.qrCode || '';
         if (img) {
             this.state.qrImage = img.startsWith('data:image') ? img : `data:image/png;base64,${img}`;
         }
         this.state.error = data?.message || 'Phone mismatch. Please scan with the correct number.';
         this.state.stage = 'qr';
         this.state.showQRModal = true;
-        this.state.isLoading = false;
+        // this.state.isLoading = false;
     }
 
     mounted() {
@@ -215,6 +237,13 @@ export class WhatsAppWebClientAction extends Component {
     async loadData() {
         this.state.isLoading = true;
         try {
+            try {
+                const backendUrl = await this.orm.call('ir.config_parameter', 'get_param', ['whatsapp_chat_module.backend_api_url', 'http://localhost:3000']);
+                this.backendApiUrl = backendUrl;
+            } catch(e){
+                console.warn("[WA] Failed to get backend URL from config, using default:", e);
+                this.backendApiUrl = 'http://localhost:3000';
+            }
             let connections = [];
             try {
                 connections = await Promise.race([
@@ -263,7 +292,7 @@ export class WhatsAppWebClientAction extends Component {
                     try {
                         await this.loadConversations(true);
                         this.state.stage = 'ready';
-                        this.state.isLoading = false;
+                        // this.state.isLoading = false;
                         return;
                     } catch (convErr) {
                         console.error("[WA] Error loading conversations on init:", convErr.message || convErr);
@@ -285,7 +314,7 @@ export class WhatsAppWebClientAction extends Component {
             this.state.conversations = this.state.conversations || [];
         } finally {
             if (this.state.stage !== 'ready' && this.state.stage !== 'qr') {
-                this.state.isLoading = false;
+                // this.state.isLoading = false;
             }
             if (this.state.update) {
                 this.state.update();
@@ -317,35 +346,39 @@ export class WhatsAppWebClientAction extends Component {
             if (isNaN(pageSizeNum) || pageSizeNum < 1) {
                 throw new Error(`Invalid pageSize: ${pageSize}. Must be a positive integer >= 1`);
             }
-            const url = new URL(`${this.backendApiUrl}/api/whatsapp/chats`);
+            const url = new URL(`${this.backendApiUrl}/api/chat`);
             url.searchParams.append('pageIndex', pageIndexNum.toString());
             url.searchParams.append('pageSize', pageSizeNum.toString());
             const headers = {
                 'x-api-key': this.apiKey.trim(),
                 'x-phone-number': this.phoneNumber.trim(),
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
             };
-            const response = await fetch(url.toString(), { method: 'POST', headers });
+            const response = await fetch(url.toString(), { method: 'GET', headers });
             const result = await this._parseResponse(response);
+
             if (!response.ok) {
                 const errorMessage = result.message || result.error || response.statusText;
                 throw new Error(`HTTP ${response.status}: ${errorMessage}`);
             }
+            if(this.state.isLoading && response.status === 200){
+                this.state.isLoading = false;
+            }
             if (!result.success) {
                 throw new Error(result.message || 'Failed to load chats');
             }
-            const { chats, meta } = result.data || {};
-            const conversations = chats || [];
+            const { items, meta } = result.data || {};
+            const conversations = items || [];
             const hasMore = meta?.hasNextPage || false;
             const mappedConversations = conversations.map(chat => this._mapBackendChatToConversation(chat));
             if (resetPagination || pageIndex === 1) {
                 this.state.conversations = mappedConversations;
             } else {
-                const existingIds = new Set(this.state.conversations.map(c => c.conversation_id));
-                const newConversations = mappedConversations.filter(c => !existingIds.has(c.conversation_id));
+                const existingIds = new Set(this.state.conversations.map(c => c.id));
+                const newConversations = mappedConversations.filter(c => !existingIds.has(c.id));
                 this.state.conversations = [...this.state.conversations, ...newConversations];
             }
-            this.state.conversations.sort((a, b) => new Date(b.last_activity || 0) - new Date(a.last_activity || 0));
+            this.state.conversations.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
             this._rebuildConversationMap();
             this.state.pagination.hasMore = hasMore;
             this.state.pagination.pageIndex = meta?.pageIndex || pageIndex;
@@ -364,19 +397,7 @@ export class WhatsAppWebClientAction extends Component {
 
     _mapBackendChatToConversation(chat) {
         return {
-            id: chat.id || chat.chatId,
-            conversation_id: chat.id || chat.chatId,
-            contact_name: chat.name || 'Unknown',
-            contact_phone: chat.to || '',
-            last_message_content: chat.latestMessage?.body || 'No messages yet',
-            last_message_type: chat.latestMessage?.type || 'text',
-            last_activity: chat.timestamp || new Date().toISOString(),
-            unread_count: chat.unreadCount || 0,
-            is_pinned: chat.pinned || false,
-            is_muted: chat.isMuted || false,
-            is_archived: chat.archived || false,
-            profile_picture: chat.profilePicture || '/web/static/src/img/avatar.png',
-            is_group: chat.isGroup || false
+           ...chat
         };
     }
 
@@ -405,10 +426,10 @@ export class WhatsAppWebClientAction extends Component {
             this.state.filteredConversations = [...this.state.conversations];
         } else {
             this.state.filteredConversations = this.state.conversations.filter(conv => {
-                const name = (conv.contact_name || "").toLowerCase();
+                const name = (conv.name || "").toLowerCase();
                 const phone = (conv.contact_phone || "").toLowerCase();
-                const lastMessage = (conv.last_message_content || "").toLowerCase();
-                return name.includes(searchTerm) || phone.includes(searchTerm) || lastMessage.includes(searchTerm);
+                // const lastMessage = (conv.latestMessage || latestMessageId).toLowerCase();
+                return name.includes(searchTerm) || phone.includes(searchTerm);
             });
         }
     }
@@ -473,6 +494,7 @@ export class WhatsAppWebClientAction extends Component {
                     }
                 }
                 await this.loadConversations(true);
+                this.state.switchingConnection = false;
                 this.state.stage = 'ready';
                 this.state.canSendMessages = true;
             } catch (error) {
@@ -489,7 +511,7 @@ export class WhatsAppWebClientAction extends Component {
         this.state.showConnectionSelector = true;
     }
     
-    closeQRModal() {
+    closeQRModal() { 
         this.state.showQRModal = false;
     }
     
@@ -497,10 +519,10 @@ export class WhatsAppWebClientAction extends Component {
         const conversation = this.state.filteredConversations.find(c => c.id === conversationId) ||
                              this.state.conversations.find(c => c.id === conversationId);
         if (conversation) {
-            conversation.unread_count = 0;
-            const chatIndex = this._conversationMap.get(conversation.conversation_id);
+            conversation.unreadCount = 0;
+            const chatIndex = this._conversationMap.get(conversation.id);
             if (chatIndex !== undefined && chatIndex >= 0 && chatIndex < this.state.conversations.length) {
-                this.state.conversations[chatIndex].unread_count = 0;
+                this.state.conversations[chatIndex].unreadCount = 0;
             }
             this.state.selectedConversation = conversation;
             this.state.messagePagination.pageIndex = 1;
@@ -530,7 +552,7 @@ export class WhatsAppWebClientAction extends Component {
                 return;
             }
             const baseUrl = this.backendApiUrl || "http://localhost:3000";
-            const url = new URL(`${baseUrl}/api/whatsapp/contact`);
+            const url = new URL(`${baseUrl}/api/contact`);
             url.searchParams.append('pageIndex', String(pageIndex));
             url.searchParams.append('pageSize', String(pageSize));
             let headers;
@@ -546,14 +568,13 @@ export class WhatsAppWebClientAction extends Component {
             if (!response.ok || !result.success) {
                 throw new Error(result.message || 'Failed to load contacts');
             }
-            const contactsPayload = result.data?.contacts || [];
+            const contactsPayload = result.data?.items || [];
             const contacts = contactsPayload.map(c => ({
-                id: c.id,
-                name: c.name || c.number,
-                display_name: c.name || c.number,
-                phone_number: c.number,
-                profile_picture: c.profilePicture || '/web/static/src/img/avatar.png',
-                is_group: !!c.isGroup,
+                ...c,  // Pass through all backend fields
+                // Add aliases for backward compatibility if needed
+                display_name: c.name,  // For template compatibility
+                phone_number: c.phoneNumber,  // For template compatibility
+                profile_picture: c.profilePicture,  // For template compatibility
             }));
             const meta = result.data?.meta || {};
             this.state.contacts = append ? (this.state.contacts || []).concat(contacts) : contacts;
@@ -602,8 +623,8 @@ export class WhatsAppWebClientAction extends Component {
         const searchTerm = (this.state.contactsSearchTerm || '').toLowerCase().trim();
         if (!searchTerm) return this.state.contacts;
         return this.state.contacts.filter(contact => {
-            const name = (contact.name || contact.display_name || '').toLowerCase();
-            const phone = (contact.phone_number || '').toLowerCase();
+            const name = (contact.name || contact.pushname || '').toLowerCase();
+            const phone = (contact.phoneNumber || '').toLowerCase();
             return name.includes(searchTerm) || phone.includes(searchTerm);
         });
     }
@@ -613,33 +634,38 @@ export class WhatsAppWebClientAction extends Component {
         this.state.contactsSearchTerm = "";
         try {
             const conversation = {
-                id: contact.id,
-                conversation_id: contact.id,
-                contact_name: contact.name || contact.display_name || 'Unknown',
-                contact_phone: contact.phone_number || '',
-                profile_picture: contact.profile_picture || '/web/static/src/img/avatar.png',
-                last_message_content: 'No messages yet',
-                last_activity: new Date().toISOString(),
-                unread_count: 0,
-                is_pinned: false,
-                is_muted: false,
-                is_archived: false,
+                // id: contact.id,
+                // name: contact.name || contact.pushname || 'Unknown',
+                // profilePicture: contact.profilePicture || '/web/static/src/img/avatar.png',
+                // isGroup: false,
+                // unreadCount: 0,
+                // // timestamp: ,
+                // pinned: false,
+                // isMuted: false,
+                // archived: false,
+                ...contact,  // Spread all contact fields (id, name, pushname, phoneNumber, profilePicture, etc.)
+                isGroup: false,  // Contacts are not groups
+                unreadCount: 0,  // New conversation
+                timestamp: new Date().toISOString(),  // For sorting
+                latestMessage: null,  // No messages yet
+                pinned: false,
+                isMuted: false,
+                archived: false,
             };
             let existingConv = this.state.conversations.find(c => 
-                c.conversation_id === conversation.conversation_id ||
-                (c.contact_phone && c.contact_phone === conversation.contact_phone)
+                c.id === conversation.id
             );
             if (!existingConv) {
                 this.state.conversations.unshift(conversation);
                 this._rebuildConversationMap();
             } else {
                 Object.assign(existingConv, {
-                    contact_name: conversation.contact_name,
-                    contact_phone: conversation.contact_phone,
-                    profile_picture: conversation.profile_picture,
+                    name: conversation.name || conversation.pushname,
+                    phoneNumber: conversation.phoneNumber,
+                    profilePicture: conversation.profilePicture,
                 });
             }
-            await this.selectConversation(conversation.id || conversation.conversation_id);
+            await this.selectConversation(conversation.id);
         } catch (error) {
             console.error("[WA] Error opening chat with contact:", error.message || error);
             this.state.error = 'Failed to open chat. Please try again.';
@@ -665,7 +691,7 @@ export class WhatsAppWebClientAction extends Component {
             }
             const { pageIndex, pageSize } = this.state.messagePagination;
             const chatId = selected.conversation_id || selected.id || conversationId;
-            const url = new URL(`${this.backendApiUrl}/api/whatsapp/messages`);
+            const url = new URL(`${this.backendApiUrl}/api/message`);
             url.searchParams.append('chatId', chatId);
             url.searchParams.append('pageIndex', parseInt(pageIndex, 10).toString());
             url.searchParams.append('pageSize', parseInt(pageSize, 10).toString());
@@ -684,8 +710,9 @@ export class WhatsAppWebClientAction extends Component {
                 const message = result?.message || response.statusText;
                 throw new Error(`HTTP ${response.status}: ${message}`);
             }
-            const { messages = [], meta = {} } = result.data || {};
-            const mapped = messages.map((m) => this._mapBackendMessageToUI(m));
+            const { items = [], meta = {} } = result.data || {};
+            const visibleItems = items.filter(item => !item.deletedType || item.deletedType !== 'deleted_for_me');
+            const mapped = visibleItems.map((m) => this._mapBackendMessageToUI(m));
             const sortAsc = (arr) => arr.sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
             const scrollState = reset ? null : this.captureScrollState();
             if (reset || pageIndex === 1) {
@@ -763,6 +790,7 @@ export class WhatsAppWebClientAction extends Component {
         else if (ack >= 2) status = 'delivered';
         else if (ack >= 1) status = 'sent';
         
+        const isDeleted = m.deletedType === 'deleted_for_everyone';
         // Map reactions if they exist and group by emoji
         let reactions = [];
         if (m.reactions && Array.isArray(m.reactions)) {
@@ -796,23 +824,15 @@ export class WhatsAppWebClientAction extends Component {
         }
         
         return {
-            id: m.id || m.messageId,
-            content: m.body || m.text || '',
+            ...m,
             direction,
-            msg_timestamp: m.timestamp || m.createdAt || m.time,
-            message_type: m.messageType || m.type || 'text',
-            status,
+            status: status,
             ack: ack,
-            timestamp: (m.timestamp || m.createdAt || m.time),
-            type: (m.messageType || m.type || 'text'),
-            fileName: m.fileName || m.filename || null,
-            mimeType: m.mimeType || null,
             reactions: reactions,
-            is_edited: m.is_edited || false,
-            edited_at: m.edited_at || null,
-            location: m.location || null,
-            latitude: m.location?.latitude || m.latitude || null,
-            longitude: m.location?.longitude || m.longitude || null,
+            // Add aliases for backward compatibility if needed
+            isDeleted: isDeleted,
+            content: m.body,  // For template compatibility
+            type: m.messageType,  // For template compatibility
         };
     }
 
@@ -827,12 +847,14 @@ export class WhatsAppWebClientAction extends Component {
     }
     
     async sendMessage() {
+        console.log('send message click')
         if (this.state.editingMessageId) { this.saveEdit(); return; }
         const messageText = this.state.messageInput.trim();
         const hasMedia = this.state.selectedMedia !== null;
         if ((!messageText && !hasMedia) || !this.state.selectedConversation) return;
         const selected = this.state.selectedConversation;
-        const recipientPhone = selected.contact_phone?.trim();
+        console.log("selected convo",selected)
+        const recipientPhone = selected.phoneNumber?.trim();
         if (!recipientPhone) return;
         if (!this.apiKey || !this.phoneNumber) return;
         const originalMessage = messageText;
@@ -842,7 +864,7 @@ export class WhatsAppWebClientAction extends Component {
         const messageType = selectedMedia ? selectedMedia.type : 'chat';
         try {
             this.state.mediaUploading = true;
-            const url = `${this.backendApiUrl}/api/whatsapp/send`;
+            const url = `${this.backendApiUrl}/api/send`;
             let headers;
             try {
                 headers = this._getApiHeaders();
@@ -887,7 +909,7 @@ export class WhatsAppWebClientAction extends Component {
     }
 
     canEditMessage(message) {
-        if (!message.id || message.direction !== 'outbound' || (message.type !== 'text' && message.message_type !== 'text' && message.type !== 'chat' && message.message_type !== 'chat')) return false;
+        if (!message.id || message.direction !== 'outbound' || (message.type !== 'text' && message.messageType !== 'text' && message.type !== 'chat' && message.messageType !== 'chat')) return false;
         const age = Date.now() - (new Date(message.timestamp || 0).getTime());
         return age < 15 * 60 * 1000;
     }
@@ -913,7 +935,7 @@ export class WhatsAppWebClientAction extends Component {
         return;
     }
         try {
-            const response = await fetch(`${this.backendApiUrl}/api/whatsapp/edit`, {
+            const response = await fetch(`${this.backendApiUrl}/api/edit`, {
                 method: 'PUT',
                 headers: {...this._getApiHeaders(), 'Content-Type': 'application/json'},
                 body: JSON.stringify({ messageId: messageId, newText: messageText })
@@ -936,12 +958,11 @@ export class WhatsAppWebClientAction extends Component {
     }
 
     _updateChatMetadataAndMoveToTop(selected, originalMessage, selectedMedia, messageType) {
-        const chatIndex = this._conversationMap.get(selected.conversation_id);
+        const chatIndex = this._conversationMap.get(selected.id);
         if (chatIndex !== undefined && chatIndex >= 0 && chatIndex < this.state.conversations.length) {
             const chat = this.state.conversations[chatIndex];
-            chat.last_message_content = originalMessage || (selectedMedia ? selectedMedia.file.name : '');
-            chat.last_message_type = messageType;
-            chat.last_activity = new Date().toISOString();
+            chat.latestMessage = originalMessage || (selectedMedia ? selectedMedia.file.name : '');
+            // chat.last_message_type = messageType;
             if (chatIndex !== 0) {
                 const [movedChat] = this.state.conversations.splice(chatIndex, 1);
                 this.state.conversations.unshift(movedChat);
@@ -987,12 +1008,24 @@ export class WhatsAppWebClientAction extends Component {
     
     formatLastActivity(dateString) {
         if (!dateString) return "";
-        return new Date(dateString).toLocaleDateString();
+        // Extract time directly from ISO string (e.g., "2025-11-25T04:26:23.000Z" -> "04:26")
+        const match = dateString.match(/T(\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[1]}:${match[2]}`;
+        }
+        // Fallback if format doesn't match
+        return dateString;
     }
     
     formatMessageTime(dateString) {
         if (!dateString) return "";
-        return new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        // Extract time directly from ISO string (e.g., "2025-11-25T04:26:23.000Z" -> "04:26")
+        const match = dateString.match(/T(\d{2}):(\d{2})/);
+        if (match) {
+            return `${match[1]}:${match[2]}`;
+        }
+        // Fallback if format doesn't match
+        return dateString;
     }
     
     formatDayLabel(date) {
@@ -1014,7 +1047,7 @@ export class WhatsAppWebClientAction extends Component {
         if (!Array.isArray(this.state.messages) || !this.state.messages.length) return;
         let lastDayKey = null;
         this.state.messages.forEach((msg) => {
-            const timestamp = msg.timestamp || msg.msg_timestamp;
+            const timestamp = msg.timestamp;
             if (!timestamp) {
                 msg.showDayDivider = false;
                 msg.dayLabel = "";
@@ -1163,11 +1196,12 @@ export class WhatsAppWebClientAction extends Component {
         if (!this.state.selectedConversation) return;
         if (this._creatingLeadMessageId === message.id) return;
         const conversation = this.state.selectedConversation;
+        console.log("leadConversation",conversation)
         const payload = {
             message_id: message.id,
-            message_content: message.content || '',
-            message_type: message.message_type || message.type || 'text',
-            timestamp: message.timestamp || message.msg_timestamp || null,
+            message_content: message.body || message.content || '',
+            message_type: message.messageType || message.type || 'text',
+            timestamp: message.timestamp || null,
             message_direction: message.direction,
             contact_name: conversation.contact_name || conversation.name || '',
             contact_phone: conversation.contact_phone || '',
@@ -1202,20 +1236,22 @@ export class WhatsAppWebClientAction extends Component {
     
     getUnreadCount() {
         const convs = this.state.filteredConversations || [];
-        return convs.filter(c => c.unread_count > 0).length;
+        return convs.filter(c => c.unreadCount > 0).length;
     }
     
-    handleChatUpdate(chatData) {
+    handleChatUpdate(payload) {
+        console.log("chatdataupdate",payload)
+        const chatData = payload.data
         try {
             const chatId = chatData.id || chatData.chatId;
             if (!chatData || !chatId) return;
             const existingIndex = this._conversationMap.get(chatId);
             const updatedChat = this._mapBackendChatToConversation(chatData);
-            updatedChat.contact_status = 'online';
+            // updatedChat.contact_status = 'online';
             if (existingIndex !== undefined && existingIndex >= 0 && existingIndex < this.state.conversations.length) {
-                const wasSelected = this.state.selectedConversation?.conversation_id === chatId;
+                const wasSelected = this.state.selectedConversation?.id === chatId;
                 if (wasSelected) {
-                    updatedChat.unread_count = 0;
+                    updatedChat.unreadCount = 0;
                 }
                 this.state.conversations[existingIndex] = updatedChat;
                 const [movedChat] = this.state.conversations.splice(existingIndex, 1);
@@ -1228,14 +1264,46 @@ export class WhatsAppWebClientAction extends Component {
                 this.state.conversations.unshift(updatedChat);
                 this._conversationMap.set(chatId, 0);
                 for (let i = 1; i < this.state.conversations.length; i++) {
-                    const cid = this.state.conversations[i].conversation_id;
+                    const cid = this.state.conversations[i].id;
                     if (cid) this._conversationMap.set(cid, i);
                 }
             }
+            this.state.conversations.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+            this._rebuildConversationMap();
             this.filterConversations();
         } catch (error) {
             console.error("[WA] Error handling chat update:", error.message || error);
         }
+    }
+    
+    handleContactEvent(payload) {
+        const contact = payload?.data ?? payload;
+        if (!contact || !contact.id) {
+            return;
+        }
+    
+        // Normalise for templates that expect legacy field names.
+        const normalized = {
+            ...contact,
+            display_name: contact.name ?? contact.pushname ?? '',
+            phone_number: contact.phoneNumber ?? contact.phone_number ?? '',
+            profile_picture: contact.profilePicture ?? contact.profile_picture ?? '',
+        };
+    
+        if (!Array.isArray(this.state.contacts)) {
+            this.state.contacts = [];
+        }
+    
+        const existingIdx = this.state.contacts.findIndex((c) => c.id === normalized.id);
+        if (existingIdx >= 0) {
+            this.state.contacts[existingIdx] = { ...this.state.contacts[existingIdx], ...normalized };
+        } else {
+            this.state.contacts.unshift(normalized);
+        }
+    
+        // Refresh derived views
+        this.state.contacts = [...this.state.contacts];
+        this.filterConversations(); // ensures conversation chips using contact info update
     }
     
     getConversationId(from, to) {
@@ -1255,9 +1323,9 @@ export class WhatsAppWebClientAction extends Component {
             const mapIndex = this._conversationMap.get(msg.chatId);
             if (mapIndex !== undefined && mapIndex >= 0 && mapIndex < this.state.conversations.length) {
                 const conv = this.state.conversations[mapIndex];
-                if (conv.conversation_id === msg.chatId) return conv;
+                if (conv.id === msg.chatId) return conv;
             }
-            const conv = this.state.conversations.find(c => c.conversation_id === msg.chatId);
+            const conv = this.state.conversations.find(c => c.id === msg.chatId);
             if (conv) return conv;
         }
         const from = (msg.from || '').trim();
@@ -1287,15 +1355,15 @@ export class WhatsAppWebClientAction extends Component {
     _rebuildConversationMap() {
         this._conversationMap.clear();
         this.state.conversations.forEach((conv, index) => {
-            if (conv.conversation_id) {
-                this._conversationMap.set(conv.conversation_id, index);
+            if (conv.id) {
+                this._conversationMap.set(conv.id, index);
             }
-            if (conv.contact_phone && !conv.is_group) {
-                const generatedId = this.getConversationIdForChat(conv.contact_phone);
-                if (generatedId) {
-                    this._conversationMap.set(generatedId, index);
-                }
-            }
+            // if (conv.contact_phone && !conv.is_group) {
+            //     const generatedId = this.getConversationIdForChat(conv.contact_phone);
+            //     if (generatedId) {
+            //         this._conversationMap.set(generatedId, index);
+            //     }
+            // }
         });
     }
     
@@ -1333,7 +1401,9 @@ export class WhatsAppWebClientAction extends Component {
         }
     }
     
-    handleMessageEvent(msg) {
+    handleMessageEvent(chatData) {
+        const msg = chatData.data;
+        console.log("msg in handle chat data",msg)
         try {
             if (!msg || !msg.id) return;
             
@@ -1342,13 +1412,17 @@ export class WhatsAppWebClientAction extends Component {
                 this.handleReactionEvent(msg);
                 return;
             }
+            if (msg.deletedType || msg.deletedAt) {
+                this.handleMessageDelete(msg);
+                return;
+            }
             
             const msgId = msg.id;
             const targetConversation = this.findConversationByMessage(msg);
             if (!targetConversation) return;
-            const targetChatId = targetConversation.conversation_id || targetConversation.id;
+            const targetChatId = targetConversation.id || targetConversation.id;
             const selected = this.state.selectedConversation;
-            const isSelected = selected && (selected.conversation_id === targetChatId || selected.id === targetChatId);
+            const isSelected = selected && (selected.id === targetChatId || selected.id === targetChatId);
             const mappedMessage = this._mapBackendMessageToUI(msg);
             if (isSelected) {
                
@@ -1409,11 +1483,11 @@ export class WhatsAppWebClientAction extends Component {
             }
             if (chatIndex >= 0 && chatIndex < this.state.conversations.length) {
                 const chat = this.state.conversations[chatIndex];
-                chat.last_message_content = mappedMessage.content;
-                chat.last_message_type = mappedMessage.type;
-                chat.last_activity = mappedMessage.timestamp;
+                chat.latestMessage = mappedMessage.content;
+                // chat.last_message_type = mappedMessage.type;
+                chat.timestamp = mappedMessage.timestamp;
                 if (isSelected) {
-                    chat.unread_count = 0;
+                    chat.unreadCount = 0;
                 }
                 if (chatIndex !== 0) {
                     const [movedChat] = this.state.conversations.splice(chatIndex, 1);
@@ -1427,6 +1501,69 @@ export class WhatsAppWebClientAction extends Component {
             this.filterConversations();
         } catch (error) {
             console.error("[WA] Error handling message event:", error.message || error);
+        }
+    }
+    handleMessageDelete(msg) {
+        try {
+            if (!msg || !msg.id) return;
+            
+            const msgId = msg.id;
+            const deletedType = msg.deletedType || 'deleted_for_me';
+            
+            // Find the message in the current conversation's messages
+            const messageIndex = this.state.messages.findIndex(m => m.id === msgId);
+            
+            if (messageIndex >= 0) {
+                if (deletedType === 'deleted_for_everyone') {
+                    // Mark as deleted but keep in UI (show "This message was deleted")
+                    const deletedMsg = this.state.messages[messageIndex];
+                    deletedMsg.isDeleted = true;
+                    deletedMsg.deletedType = 'deleted_for_everyone';
+                    deletedMsg.deletedAt = msg.deletedAt || new Date().toISOString();
+                    // deletedMsg.content = 'This message was deleted';
+                    // deletedMsg.body = 'This message was deleted';
+                    // Remove media if present
+                    // deletedMsg.media_url = null;
+                    // deletedMsg.media = null;
+                    // deletedMsg.fileName = null;
+                } else {
+                    // deleted_for_me - remove from UI completely
+                    this.state.messages.splice(messageIndex, 1);
+                    this._messageIdSet.delete(msgId);
+                    this.decorateMessagesWithDaySeparators();
+                }
+            }
+            
+            // Update conversation's latest message if the deleted message was the latest
+            const targetConversation = this.findConversationByMessage(msg);
+            if (targetConversation) {
+                const targetChatId = targetConversation.id || targetConversation.conversation_id;
+                const chatIndex = this._conversationMap.get(targetChatId);
+                
+                if (chatIndex !== undefined && chatIndex >= 0 && chatIndex < this.state.conversations.length) {
+                    const chat = this.state.conversations[chatIndex];
+                    
+                    // If the deleted message was the latest, update to the previous message
+                    if (chat.latestMessageId === msgId || chat.latestMessage === msg.body || chat.latestMessage === msg.content) {
+                        // Find the most recent non-deleted message
+                        const recentMessages = this.state.messages
+                            .filter(m => m.id !== msgId && !m.isDeleted)
+                            .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+                        
+                        if (recentMessages.length > 0) {
+                            chat.latestMessage = recentMessages[0].content || recentMessages[0].body || 'No messages yet';
+                            chat.timestamp = recentMessages[0].timestamp;
+                        } else {
+                            chat.latestMessage = null;
+                            chat.timestamp = null;
+                        }
+                    }
+                }
+            }
+            
+            this.filterConversations();
+        } catch (error) {
+            console.error("[WA] Error handling message delete:", error.message || error);
         }
     }
 }

@@ -4,7 +4,7 @@
     <record id="whatsapp_connection_business" model="whatsapp.connection">
         <field name="name">sconnection</field>
         <field name="from_field">+91 9081045453</field>
-        <field name="api_key">ec784e828cc58a317a579e14e5021e348eaea5e4babde0e2844c909a6c6a31fc</field>
+        <field name="api_key">3e3ffa2e4b5e2ef675d2e1c279114e5ac6c11632aa875c8b4ad382fe873df3c2</field>
         <field name="is_default">false</field>
     </record>
     
@@ -12,7 +12,7 @@
     <record id="whatsapp_connection_prashant" model="whatsapp.connection">
         <field name="name">Pconnection</field>
         <field name="from_field">+91 9157000128</field>
-        <field name="api_key">96c0aa6604d5ea184e6e8dd7abda30d2d12d426d3985733ba2cc6db5a3178d7c</field>
+        <field name="api_key">85a0a560d90f69ec3fe1d13a16fb616800e9821315a466e8d5f154c5fba85f7a</field>
         <field name="is_default">false</field>
     </record>
 </odoo>

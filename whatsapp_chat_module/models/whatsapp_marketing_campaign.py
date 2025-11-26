@@ -122,6 +122,33 @@ class WhatsAppMarketingCampaign(models.Model):
         default=0,
         help="Number of messages that failed to send"
     )
+    
+    pending_recipients = fields.Text(
+        'Pending Recipients',
+        help="JSON array of recipients waiting to be sent (stored as JSON string)"
+    )
+    
+    current_recipient_index = fields.Integer(
+        'Current Recipient Index',
+        default=0,
+        help="Index of the next recipient to send"
+    )
+    
+    last_send_time = fields.Datetime(
+        'Last Send Time',
+        help="Time when last message was sent (for rate limiting)"
+    )
+    
+    next_send_delay = fields.Float(
+        'Next Send Delay (seconds)',
+        help="Random delay in seconds before next message (60-120)"
+    )
+    
+    waiting_for_qr = fields.Boolean(
+        'Waiting for QR Scan',
+        default=False,
+        help="Campaign is paused waiting for user to scan QR code"
+    )
 
     @api.model
     def _get_authorized_connection_domain(self):
@@ -310,8 +337,12 @@ class WhatsAppMarketingCampaign(models.Model):
         }
 
     def action_send(self):
-        """Send campaign - make REST API call, handle QR if needed"""
+        """Send first message to check authentication, then queue rest for cron"""
         self.ensure_one()
+        
+        # Prevent duplicate sends
+        if self.state == 'sending':
+            raise UserError(_("Campaign is already being sent. Please wait for it to complete."))
         
         # Validate
         if not self.body:
@@ -331,24 +362,39 @@ class WhatsAppMarketingCampaign(models.Model):
         if not self.from_connection_id._check_authorization():
             raise UserError(_("You are not authorized to use this connection."))
         
-        # STEP 1: Ensure socket is connected with selected connection's credentials
+        # Ensure socket is connected (for QR handling if needed)
         self._ensure_socket_connected(context_name="Campaign")
         
-        # STEP 2: Get recipients and send messages (socket should be ready for QR events)
+        # Get all recipients
         recipients = self._get_recipients()
         if not recipients:
             raise UserError(_("No valid phone numbers found in selected mailing lists"))
         
-        # Send to first recipient to check authentication
+        # STEP 1: Send first message synchronously to check if QR is needed
+        first_recipient = recipients[0]
         first_result = self._send_to_recipient_via_api(
-            recipients[0]['phone'],
-            recipients[0]['name'],
+            first_recipient['phone'],
+            first_recipient['name'],
             self.body,
             self.attachment_ids
         )
         
         # If QR popup needed, return it
         if first_result.get('qr_popup_needed'):
+            # Store ALL recipients (including first one) - it wasn't sent yet!
+            first_delay = random.uniform(60.0, 120.0)
+            
+            self.write({
+                'state': 'sending',  # Mark as sending so it can't be sent again
+                'pending_recipients': json.dumps(recipients),  # Store ALL recipients including first
+                'current_recipient_index': 0,
+                'sent_count': 0,  # No messages sent yet (QR needed)
+                'failed_count': 0,
+                'last_send_time': False,
+                'next_send_delay': first_delay,
+                'waiting_for_qr': True,  # Prevent cron from processing until QR is scanned
+            })
+            
             return {
                 'type': 'ir.actions.act_window',
                 'name': 'WhatsApp Authentication Required',
@@ -359,52 +405,51 @@ class WhatsAppMarketingCampaign(models.Model):
                 'target': 'new',
             }
         
-        # If first message sent successfully, send to all remaining recipients
+        # STEP 2: If first message sent successfully, queue remaining recipients for cron
         if first_result.get('success'):
             self.sent_count = 1
+            remaining_recipients = recipients[1:] if len(recipients) > 1 else []
+            first_delay = random.uniform(60.0, 120.0)
             
-            # Send to remaining recipients
-            remaining_recipients = recipients[1:]
-            total_remaining = len(remaining_recipients)
-            
-            for index, recipient in enumerate(remaining_recipients):
-                result = self._send_to_recipient_via_api(
-                    recipient['phone'],
-                    recipient['name'],
-                    self.body,
-                    self.attachment_ids
-                )
+            if remaining_recipients:
+                # Queue remaining recipients for cron processing
+                self.write({
+                    'state': 'sending',
+                    'pending_recipients': json.dumps(remaining_recipients),
+                    'current_recipient_index': 0,
+                    'sent_count': 1,
+                    'failed_count': 0,
+                    'last_send_time': fields.Datetime.now(),  # Set time so cron waits for delay
+                    'next_send_delay': first_delay,
+                })
                 
-                if result.get('success'):
-                    self.sent_count += 1
-                else:
-                    self.failed_count += 1
-                
-                # Add random delay between messages (2-5 seconds) to avoid WhatsApp detection
-                # Skip delay after the last message
-                if index < total_remaining - 1:
-                    delay = random.uniform(15.0, 25.0)
-                    _logger.info(f"⏳ [Campaign {self.name}] Waiting {delay:.2f}s before next message...")
-                    time.sleep(delay)
-            
-            self.write({'state': 'sent'})
-            
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Campaign Sent'),
-                    'message': _('Campaign sent to %s recipients (%s sent, %s failed)') % (
-                        len(recipients), self.sent_count, self.failed_count
-                    ),
-                    'type': 'success' if self.failed_count == 0 else 'warning',
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': _('Campaign Started'),
+                        'message': _('First message sent successfully. Remaining %d messages will be sent in the background with random delays (60-120 seconds).') % len(remaining_recipients),
+                        'type': 'info',
+                        'sticky': False,
+                    }
                 }
-            }
+            else:
+                # Only one recipient, already sent
+                self.write({'state': 'sent'})
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': _('Campaign Sent'),
+                        'message': _('Campaign sent successfully.'),
+                        'type': 'success',
+                    }
+                }
         else:
             # First message failed
             self.failed_count = 1
             self.write({'state': 'draft'})
-            raise UserError(_("Failed to send: %s") % first_result.get('error', 'Unknown error'))
+            raise UserError(_("Failed to send first message: %s") % first_result.get('error', 'Unknown error'))
 
     def _send_to_recipient_via_api(self, phone, contact_name, body, attachments, test_wizard_id=None, test_phone_to=None):
         """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed
@@ -451,7 +496,10 @@ class WhatsAppMarketingCampaign(models.Model):
                 'origin': self._get_origin(),
             }
             
-            api_url = "http://localhost:3000/api/whatsapp/send"
+            # api_url = "http://localhost:3000/api/whatsapp/send"
+            backend_url = self.env['whatsapp.connection'].get_backend_api_url()
+            api_url = backend_url + "/api/whatsapp/send"
+            print(f"API URL: {api_url}")
             has_attachments = bool(attachments)
             
             # Determine message type and file type handling based on backend requirements
@@ -638,62 +686,80 @@ class WhatsAppMarketingCampaign(models.Model):
             return {'success': False, 'error': str(e)}
 
     def action_close_qr_popup(self, popup=False):
-        """Resend campaign after QR authentication"""
+        """Resume campaign after QR authentication - send first message, then queue rest for cron"""
         self.ensure_one()
         
-        # Get recipients
-        recipients = self._get_recipients()
+        # After QR scan, we need to send the first message again (it wasn't sent before)
+        recipients = json.loads(self.pending_recipients or '[]')
+        
         if not recipients:
+            # No recipients to send
+            self.write({'state': 'sent'})
             return {}
         
-        # Reset counters
-        self.write({'sent_count': 0, 'failed_count': 0, 'state': 'sending'})
+        # Send first message now that WhatsApp is authenticated
+        first_recipient = recipients[0]
+        _logger.info(f"[Campaign {self.name}] Sending first message after QR scan to {first_recipient['phone']}")
         
-        # Send to all recipients
-        total_recipients = len(recipients)
-        for index, recipient in enumerate(recipients):
-            result = self._send_to_recipient_via_api(
-                recipient['phone'],
-                recipient['name'],
-                self.body,
-                self.attachment_ids
-            )
+        first_result = self._send_to_recipient_via_api(
+            first_recipient['phone'],
+            first_recipient['name'],
+            self.body,
+            self.attachment_ids
+        )
+        
+        if first_result.get('qr_popup_needed'):
+            # QR needed again (shouldn't happen, but handle it)
+            _logger.warning(f"[Campaign {self.name}] QR needed again after scan")
+            self.write({'waiting_for_qr': True})  # Set flag to prevent cron processing
+            return {
+                'type': 'ir.actions.act_window',
+                'name': 'WhatsApp Authentication Required',
+                'res_model': 'whatsapp.qr.popup',
+                'res_id': first_result.get('qr_popup_id'),
+                'view_mode': 'form',
+                'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
+                'target': 'new',
+            }
+        
+        if first_result.get('success'):
+            # First message sent successfully, queue remaining for cron
+            remaining_recipients = recipients[1:] if len(recipients) > 1 else []
+            first_delay = random.uniform(60.0, 120.0)
             
-            if result.get('success'):
-                self.sent_count += 1
-            elif result.get('qr_popup_needed'):
-                # QR needed again - return the popup
-                return {
-                    'type': 'ir.actions.act_window',
-                    'name': 'WhatsApp Authentication Required',
-                    'res_model': 'whatsapp.qr.popup',
-                    'res_id': result.get('qr_popup_id'),
-                    'view_mode': 'form',
-                    'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                    'target': 'new',
-                }
+            if remaining_recipients:
+                self.write({
+                    'state': 'sending',
+                    'pending_recipients': json.dumps(remaining_recipients),
+                    'sent_count': 1,  # First message now sent
+                    'last_send_time': fields.Datetime.now(),
+                    'next_send_delay': first_delay,
+                    'waiting_for_qr': False,  # Clear flag - ready for cron
+                })
+                message = _('First message sent successfully. Remaining %d messages will be sent in the background.') % len(remaining_recipients)
+                notif_type = 'info'
             else:
-                self.failed_count += 1
-            
-            # Add random delay between messages (2-5 seconds) to avoid WhatsApp detection
-            # Skip delay after the last message
-            if index < total_recipients - 1:
-                delay = random.uniform(15.0, 25.0)
-                _logger.info(f"⏳ [Campaign {self.name}] Waiting {delay:.2f}s before next message...")
-                time.sleep(delay)
-        
-        # Update state
-        self.write({'state': 'sent'})
-        
-        # Build message
-        if self.sent_count > 0:
-            message = self.failed_count > 0 \
-                and _("%d sent, %d failed") % (self.sent_count, self.failed_count) \
-                or _("Successfully sent %d messages!") % self.sent_count
-            notif_type = "warning" if self.failed_count > 0 else "success"
+                # Only one recipient, already sent
+                self.write({
+                    'state': 'sent',
+                    'sent_count': 1,
+                    'pending_recipients': False,
+                    'waiting_for_qr': False,  # Clear flag
+                })
+                message = _('Campaign sent successfully.')
+                notif_type = 'success'
         else:
-            message = _("Failed to send campaign")
-            notif_type = "danger"
+            # First message failed after QR scan
+            self.failed_count = 1
+            self.write({
+                'state': 'draft',
+                'pending_recipients': False,
+                'waiting_for_qr': False,  # Clear flag
+            })
+            error_msg = first_result.get('error', 'Unknown error')
+            _logger.error(f"[Campaign {self.name}] Failed to send first message after QR scan: {error_msg}")
+            message = _('Failed to send first message after QR scan: %s') % error_msg
+            notif_type = 'danger'
         
         popup_id = popup.id if popup else (
             self.env['whatsapp.qr.popup'].search([
@@ -794,6 +860,98 @@ class WhatsAppMarketingCampaign(models.Model):
             _logger.warning(f"[{context_name}] Socket not confirmed within {max_wait}s, proceeding anyway")
         
         return socket_confirmed
+
+    @api.model
+    def cron_send_campaign_messages(self):
+        """Cron job to send campaign messages with random delays (60-120 seconds)
+        
+        This method processes one message per campaign per cron run.
+        Runs every minute to send messages with random delays between 60-120 seconds.
+        """
+        campaigns = self.search([
+            ('state', '=', 'sending'),
+            ('pending_recipients', '!=', False),
+            ('waiting_for_qr', '=', False),  # Skip campaigns waiting for QR scan
+        ])
+        
+        for campaign in campaigns:
+            try:
+                # Parse pending recipients
+                recipients = json.loads(campaign.pending_recipients or '[]')
+                if not recipients:
+                    # No more recipients, mark as sent
+                    campaign.write({'state': 'sent'})
+                    _logger.info(f"[Campaign {campaign.name}] Completed: {campaign.sent_count} sent, {campaign.failed_count} failed")
+                    continue
+                
+                # Check if we need to wait (random delay between 60-120 seconds)
+                if campaign.last_send_time:
+                    time_since_last = (fields.Datetime.now() - campaign.last_send_time).total_seconds()
+                    # Get the delay that was set for this campaign
+                    next_delay = campaign.next_send_delay or random.uniform(60.0, 120.0)
+                    
+                    if time_since_last < next_delay:
+                        # Not enough time has passed, skip this campaign for now
+                        _logger.debug(f"[Campaign {campaign.name}] Waiting {next_delay - time_since_last:.1f}s more before next message")
+                        continue
+                else:
+                    # First message - use the delay that was set when campaign was queued
+                    next_delay = campaign.next_send_delay or random.uniform(60.0, 120.0)
+                
+                # Get next recipient
+                recipient = recipients[0]
+                
+                _logger.info(f"[Campaign {campaign.name}] Sending to {recipient['phone']} ({recipient['name']})")
+                
+                # Send message
+                result = campaign._send_to_recipient_via_api(
+                    recipient['phone'],
+                    recipient['name'],
+                    campaign.body,
+                    campaign.attachment_ids
+                )
+                
+                # Handle QR popup if needed
+                if result.get('qr_popup_needed'):
+                    # Pause campaign - user needs to scan QR
+                    _logger.warning(f"[Campaign {campaign.name}] QR code needed, pausing campaign. User must scan QR code first.")
+                    campaign.write({'waiting_for_qr': True})  # Set flag so cron skips this campaign
+                    continue
+                
+                # Update counts
+                if result.get('success'):
+                    campaign.sent_count += 1
+                    _logger.info(f"[Campaign {campaign.name}] Successfully sent to {recipient['phone']}")
+                else:
+                    campaign.failed_count += 1
+                    error_msg = result.get('error', 'Unknown error')
+                    _logger.error(f"[Campaign {campaign.name}] Failed to send to {recipient['phone']}: {error_msg}")
+                
+                # Remove sent recipient from queue
+                recipients.pop(0)
+                
+                # Generate delay for NEXT message (60-120 seconds)
+                next_delay = random.uniform(60.0, 120.0)
+                
+                # Update campaign state
+                campaign.write({
+                    'pending_recipients': json.dumps(recipients) if recipients else False,
+                    'current_recipient_index': campaign.current_recipient_index + 1,
+                    'last_send_time': fields.Datetime.now(),
+                    'next_send_delay': next_delay,  # Store delay for next message
+                })
+                
+                _logger.info(f"[Campaign {campaign.name}] Progress: {campaign.sent_count} sent, {campaign.failed_count} failed, {len(recipients)} remaining. Next message in {next_delay:.1f}s")
+                
+                # If no more recipients, mark as sent
+                if not recipients:
+                    campaign.write({'state': 'sent'})
+                    _logger.info(f"[Campaign {campaign.name}] Completed: {campaign.sent_count} sent, {campaign.failed_count} failed")
+                    
+            except Exception as e:
+                _logger.exception(f"[Campaign {campaign.name}] Error in cron: {e}")
+                # Continue with next campaign
+                continue
 
 
 class WhatsAppMarketingCampaignTest(models.TransientModel):

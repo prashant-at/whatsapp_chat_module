@@ -550,7 +550,9 @@ class WhatsappCompose(models.TransientModel):
                     }
                     
                     # Send to WhatsApp API
-                    api_url = "http://localhost:3000/api/whatsapp/send"
+                    # api_url = "http://localhost:3000/api/whatsapp/send"
+                    api_url = self.env['whatsapp.connection'].get_backend_api_url() + "/api/send"
+                    print(f"API URL: {api_url}")
                     # Normalize recipient phone: keep one space after country code, remove others
                     
                     raw_phone = (partner.mobile or '')
@@ -636,7 +638,7 @@ class WhatsappCompose(models.TransientModel):
                             timeout=120
                         )
                     
-                    
+                    print("send response",response.json())
                     # Accept both 200 and 201 as success (201 = QR code required)
                     if response.status_code in [200, 201]:
                         # MAIN PATH ONLY: strictly parse JSON; treat invalid JSON as error

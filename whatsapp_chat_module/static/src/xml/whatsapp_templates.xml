@@ -88,7 +88,7 @@
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                z-index: 20; /* Higher than connection selector */
+                z-index: 1000; /* Higher than connection selector */
                 backdrop-filter: blur(2px); /* Subtle backdrop blur */
                 -webkit-backdrop-filter: blur(2px); /* Safari support */
             }
@@ -857,6 +857,26 @@
                 text-transform: capitalize;
             }
 
+            <!-- Add this in the <style> section -->
+            .message-deleted {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 8px 12px;
+                color: #667781;
+                font-style: italic;
+                font-size: 14px;
+            }
+
+            .message-deleted i {
+                color: #667781;
+                font-size: 16px;
+            }
+
+            .message-deleted span {
+                color: #667781;
+            }
+
             /* Message Media Display */
             .message-media {
                 margin-bottom: 8px;
@@ -1340,11 +1360,11 @@
                                              class="contact-item"
                                              t-on-click="() => this.openChatWithContact(contact)">
                                             <div class="contact-avatar">
-                                                <img t-att-src="contact.profile_picture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
+                                                <img t-att-src="contact.profilePicture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
                                             </div>
                                             <div class="contact-info">
-                                                <div class="contact-name" t-esc="contact.name or contact.display_name"/>
-                                                <div class="contact-phone" t-esc="contact.phone_number"/>
+                                                <div class="contact-name" t-esc="contact.name or contact.pushname"/>
+                                                <div class="contact-phone" t-esc="contact.phoneNumber"/>
                                             </div>
                                         </div>
                                         <!-- Loader at the end when loading more contacts -->
@@ -1376,22 +1396,22 @@
                                  t-att-class="{'selected': conversation.id === state.selectedConversation?.id}"
                                  t-on-click="() => this.selectConversation(conversation.id)">
                                 <div class="conversation-avatar">
-                                    <img t-att-src="conversation.profile_picture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
+                                    <img t-att-src="conversation.profilePicture or '/web/static/src/img/avatar.png'" alt="Avatar"/>
                                     <div t-if="conversation.contact_status === 'online'" class="status-indicator online"/>
                                 </div>
                                 <div class="conversation-content">
                                     <div class="conversation-header">
-                                        <span class="contact-name" t-esc="conversation.contact_name or 'Unknown'"/>
-                                        <span class="last-activity" t-esc="formatLastActivity(conversation.last_activity)"/>
+                                        <span class="contact-name" t-esc="conversation.name or 'Unknown'"/>
+                                        <span class="last-activity" t-esc="formatLastActivity(conversation.timestamp)"/>
                                     </div>
                                     <div class="conversation-preview">
-                                        <span class="last-message" t-esc="conversation.last_message_content or 'No messages yet'"/>
-                                        <span t-if="conversation.unread_count > 0" class="unread-badge" t-esc="conversation.unread_count"/>
+                                        <span class="last-message" t-esc="conversation.latestMessage or 'No messages yet'"/>
+                                        <span t-if="conversation.unreadCount > 0" class="unread-badge" t-esc="conversation.unreadCount"/>
                                     </div>
                                 </div>
                                 <div class="conversation-actions">
-                                    <i t-if="conversation.is_pinned" class="fa fa-thumbtack"/>
-                                    <i t-if="conversation.is_muted" class="fa fa-volume-mute"/>
+                                    <i t-if="conversation.pinned" class="fa fa-thumbtack"/>
+                                    <i t-if="conversation.isMuted" class="fa fa-volume-mute"/>
                                 </div>
                             </div>
                             
@@ -1428,11 +1448,11 @@
                             <div class="chat-header">
                                 <div class="chat-contact">
                                     <div class="contact-avatar">
-                                        <img t-att-src="state.selectedConversation.profile_picture" alt="Avatar"/>
+                                        <img t-att-src="state.selectedConversation.profilePicture" alt="Avatar"/>
                                         <div class="status-indicator online"/>
                                     </div>
                                     <div class="contact-info">
-                                        <h5 t-esc="state.selectedConversation.contact_name"/>
+                                        <h5 t-esc="state.selectedConversation.name"/>
                                         <span class="contact-status" t-esc="state.selectedConversation.contact_status"/>
                                     </div>
                                 </div>
@@ -1479,16 +1499,20 @@
                                     <div class="message-bubble">
                                         <button t-if="message.direction === 'outbound' and !state.editingMessageId and this.canEditMessage(message)" class="btn-edit" t-on-click="() => this.startEdit(message)" title="Edit">✏️</button>
                                         <!-- Media Display -->
-                                        <div t-if="message.media_url or message.media or (message.message_type and message.message_type !== 'chat' and message.message_type !== 'text')" class="message-media">
-                                            <img t-if="message.message_type === 'image' or message.type === 'image'" 
+                                        <div t-if="message.isDeleted" class="message-deleted">
+                                            <i class="fa fa-ban"/>
+                                            <span>This message was deleted</span>
+                                        </div>
+                                        <div t-if="message.media_url or message.media or (message.messageType and message.messageType !== 'chat' and message.messageType !== 'text')" class="message-media">
+                                            <img t-if="message.messageType === 'image' or message.type === 'image'" 
                                                  t-att-src="message.media_url or message.media" 
                                                  class="message-image"
                                                  t-att-alt="message.content"/>
-                                            <video t-if="message.message_type === 'video' or message.type === 'video'" 
+                                            <video t-if="message.messageType === 'video' or message.type === 'video'" 
                                                    t-att-src="message.media_url or message.media" 
                                                    controls="controls"
                                                    class="message-video"/>
-                                            <div t-if="message.message_type === 'document' or message.type === 'document'" 
+                                            <div t-if="message.messageType === 'document' or message.type === 'document'" 
                                                  class="message-document">
                                                 <i class="fa fa-file"/>
                                                 <span t-esc="message.fileName or message.content or 'Document'"/>
@@ -1497,14 +1521,13 @@
                                                    target="_blank"
                                                    class="download-link">Download</a>
                                             </div>
-                                            <audio t-if="message.message_type === 'audio' or message.type === 'audio'" 
+                                            <audio t-if="message.messageType === 'audio' or message.type === 'audio'" 
                                                    t-att-src="message.media_url or message.media" 
                                                    controls="controls"
                                                    class="message-audio"/>
                                         </div>
-                                        
                                         <!-- Location Display -->
-                                        <div t-if="message.message_type === 'location' or message.type === 'location' or (message.latitude and message.longitude)" class="message-location">
+                                        <div t-if="message.messageType === 'location' or message.type === 'location' or (message.latitude and message.longitude)" class="message-location">
                                             <div class="location-info">
                                                 <i class="fa fa-map-marker"/>
                                                 <span t-if="message.location and message.location.name" t-esc="message.location.name"/>
@@ -1527,14 +1550,14 @@
                                         </div>
                                         
                                         <!-- Text Content -->
-                                        <div t-if="message.content and message.message_type !== 'location'" class="message-content" t-esc="message.content"/>
+                                        <div t-if="message.content and message.messageType !== 'location' and !message.isDeleted" class="message-content" t-esc="message.content"/>
                                         
                                         <!-- Timestamp and Ack -->
                                         <div class="message-time">
                                             <span t-if="message.is_edited" class="edited-badge" title="Edited">Edited</span>
                                             <span t-esc="formatMessageTime(message.timestamp)"/>
                                             <span t-if="message.direction === 'outbound' and message.ack >= 1"
-                                                  t-att-style="'color: ' + getAckColor(message) + '; margin-left: 4px; font-size: 12px; font-weight: bold;'">
+                                                  t-att-style="'color: ' + getAckColor(message) + '; margin-left: 4px; font-size: 12px; font-weight: bold; letter-spacing: -5px;'">
                                                 <t t-if="message.ack >= 3">✓✓</t>
                                                 <t t-if="message.ack === 2">✓✓</t>
                                                 <t t-if="message.ack === 1">✓</t>

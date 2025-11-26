@@ -34,7 +34,15 @@ class WhatsAppConnection(models.Model):
         string="Socket Connected",
         help="Flag set by frontend when socket connection is established"
     )
-    
+
+    @api.model
+    def get_backend_api_url(self):
+        """Get backend API URL from system parameter or default"""
+        return self.env['ir.config_parameter'].sudo().get_param(
+            'whatsapp_chat_module.backend_api_url',
+            'http://localhost:3000'
+        )
+
     @api.constrains('is_default')
     def _check_default_connection(self):
         """Ensure only one default connection exists"""
@@ -293,13 +301,16 @@ class WhatsAppConnection(models.Model):
             _logger.warning(f"[Connection] Socket not confirmed within {max_wait}s, proceeding anyway")
         
         # STEP 2: Make REST call (socket should be connected by now)
-        api_url = "http://localhost:3000/api/whatsapp/qr"
+        # api_url = "http://localhost:3000/api/whatsapp/qr"
+        api_url = self.get_backend_api_url() + "/api/qr-code"
+        print("api url",api_url)
         headers = {
             'x-api-key': self.api_key.strip(),
             'x-phone-number': self.from_field.strip(),
             'origin': origin,  # Fixed: uncommented and using request origin
             'Content-Type': 'application/json'
         }
+        print("header",headers)
         
         _logger.info(f"[Connection] Step 2: Making REST call for {self.name}")
         _logger.info(f"[Connection] API URL: {api_url}")
@@ -307,7 +318,8 @@ class WhatsAppConnection(models.Model):
         _logger.info(f"[Connection] Origin: {origin}")
         
         try:
-            response = requests.post(api_url, headers=headers)
+            response = requests.get(api_url, headers=headers)
+            print(response,"response text")
             _logger.info(f"[Connection] API Response Status: {response.status_code}")
             
             result = response.json() if response.content else {}

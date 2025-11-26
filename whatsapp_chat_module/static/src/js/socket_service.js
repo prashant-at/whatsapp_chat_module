@@ -61,6 +61,28 @@ export class SocketService {
 
     async connect(userId, options = {}) {
         try {
+            let backendUrl = 'http://localhost:3000';
+            try {
+                const response = await fetch('/web/dataset/call_kw', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        method: 'call',
+                        params: {
+                            model: 'ir.config_parameter',
+                            method: 'get_param',
+                            args: ['whatsapp_chat_module.backend_api_url', 'http://localhost:3000'],
+                            kwargs: {}
+                        }
+                    })
+                });
+                const data = await response.json();
+                // if (data.result) backendUrl = data.result;
+                backendUrl = 'http://localhost:4001';
+            } catch (error) {
+                console.warn("[WA][Socket] Failed to get backend URL, using default:", error);
+            }
             // Get credentials that will be used for connection
             const apiKey = this.apiKey || '';
             const phoneNumber = this.phoneNumber || '';
@@ -100,6 +122,7 @@ export class SocketService {
                     'x-api-key': apiKey,
                     'x-phone-number': phoneNumber,
                     'origin': clientOrigin, // Used as systemIPAddress on backend
+                    // 'origin': '123'
                 },
             };
             
@@ -110,7 +133,7 @@ export class SocketService {
             }
 
             // Connect to your backend (local Socket.IO server)
-            this.socket = this._io('http://localhost:3000', socketOptions);
+            this.socket = this._io(backendUrl, socketOptions);
 
             this.setupEventHandlers();
             
@@ -166,16 +189,16 @@ export class SocketService {
         });
 
         // Listen for any error or message events from server
-        // this.socket.onAny((eventName, ...args) => {
-        //     console.log(`🔔 [Socket Event] Received event '${eventName}':`);
-        // });
+        this.socket.onAny((eventName, ...args) => {
+            console.log(`🔔 [Socket Event] Received event '${eventName}':`);
+        });
 
         // WhatsApp specific events - Backend wraps all events in { data: ... }
         this.socket.on('qr_code', ({ data }) => {
            
-            
+            console.log("qr_code data", data);
             // Update UI instantly via DOM
-            this.updateQrPopupUI(data);
+            // this.updateQrPopupUI(data);
             
             // Also inform backend via RPC
             this.sendRPC('qr_code', data);
@@ -185,26 +208,38 @@ export class SocketService {
         this.socket.on('phone_mismatch', ({ data }) => {
             
             // Update UI instantly via DOM
-            this.updateQrPopupUI(data);
+            // this.updateQrPopupUI(data);
             
             // Also inform backend via RPC
             this.sendRPC('phone_mismatch', data);
             this._emitLocal('phone_mismatch', data);
         });
 
-        this.socket.on('status', ({ data }) => {
-            this.sendRPC('status', data);
-            this._emitLocal('status', data);
+        this.socket.on('status', (payload) => {
+            console.log(payload,"status data")
+            if(payload.type === "qr_code" || payload.type === "qr_code_mismatch"){
+                this.updateQrPopupUI(payload);
+            }
+            this.sendRPC('status', payload);
+            this._emitLocal('status', payload);
         });
 
-        this.socket.on('message', ({ data }) => {
+        this.socket.on('message', ( payload ) => {
+            console.log("message event",payload)
+            // const messageData = payload?.data;
             // this.sendRPC('message', data);
-            this._emitLocal('message', data);
+            this._emitLocal('message', payload);
         });
 
-        this.socket.on('chat', ({ data }) => {
+        this.socket.on('chat', ( data ) => {
+            console.log("chat event",data)
             // this.sendRPC('chat', data);
             this._emitLocal('chat', data);
+        });
+        this.socket.on("contact", ( data ) => {
+            console.log("contact event",data)
+            // this.sendRPC('contact', data);
+            this._emitLocal('contact', data);
         });
     }
 
@@ -246,7 +281,9 @@ export class SocketService {
      * @param {string|object} data - QR code data (string or object with qrCode property)
      * @param {number} retryCount - Internal retry counter (default: 0)
      */
-    updateQrPopupUI(data, retryCount = 0) {
+    updateQrPopupUI(payload, retryCount = 0) {
+        let data = payload?.data;
+        console.log("data",data)
         let qrCode = null;
         if (typeof data === 'string') {
             // If data is a string, treat it as the QR code directly
@@ -281,7 +318,7 @@ export class SocketService {
             if (retryCount < maxRetries) {
                 console.log(`[QR Popup]  QR image element not found (attempt ${retryCount + 1}/${maxRetries}), retrying in ${retryDelay}ms...`);
                 setTimeout(() => {
-                    this.updateQrPopupUI(data, retryCount + 1);
+                    this.updateQrPopupUI(payload, retryCount + 1);
                 }, retryDelay);
                 return; // Exit early, will retry
             } else {
@@ -294,8 +331,8 @@ export class SocketService {
         // 2️⃣ Update status message text
         const msgElem = document.querySelector('.o_field_widget[name="message"]') ||
                         document.querySelector('field[name="message"]');
-        if (msgElem && data.message) {
-            msgElem.textContent = data.message;
+        if (msgElem && payload.message) {
+            msgElem.textContent = payload.message;
             console.log('[QR Popup]  Updated QR message');
         }
 

@@ -19,6 +19,7 @@
             'security/whatsapp_connection_security.xml',
             'data/mail_subtype_data.xml',
             'data/whatsapp_connection_data.xml',
+            'data/cron_data.xml',
             'views/connection_views.xml',
             # 'views/request_response_views.xml',
             # 'views/whatsapp_message_views.xml',
