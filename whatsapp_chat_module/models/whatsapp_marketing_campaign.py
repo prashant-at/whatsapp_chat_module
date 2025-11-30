@@ -495,10 +495,9 @@ class WhatsAppMarketingCampaign(models.Model):
                 'x-phone-number': self.from_connection_id.from_field,
                 'origin': self._get_origin(),
             }
-            
-            # api_url = "http://localhost:3000/api/whatsapp/send"
-            backend_url = self.env['whatsapp.connection'].get_backend_api_url()
-            api_url = backend_url + "/api/whatsapp/send"
+            api_url = "http://localhost:4000"
+            # backend_url = self.env['whatsapp.connection'].get_backend_api_url()
+            api_url = api_url + "/api/message"
             print(f"API URL: {api_url}")
             has_attachments = bool(attachments)
             
@@ -554,10 +553,22 @@ class WhatsAppMarketingCampaign(models.Model):
                         message_type = 'document'
                         file_type = 'bin'
             
+            print("messageType",message_type)
+            # Always use FormData for all message types
+            form_data = {
+                'byChatId': 'false',
+                'to': phone,
+                'messageType': message_type,
+                'body': plain_text,
+            }
+            
+            # Add fileType parameter only for documents
+            if message_type == 'document' and file_type:
+                form_data['fileType'] = file_type
+            
+            # Prepare files list - always include, even if empty
+            files = []
             if has_attachments:
-                # Build multipart form with files
-                files = []
-                
                 for attachment in attachments:
                     file_data = b''
                     
@@ -582,86 +593,64 @@ class WhatsAppMarketingCampaign(models.Model):
                         mimetype = 'application/pdf'
                     
                     if file_data and len(file_data) > 0:
-                        files.append(('files', (filename, io.BytesIO(file_data), mimetype)))
-                
-                form_data = {
-                    'to': phone,
-                    'messageType': message_type,
-                    'body': plain_text,
-                }
-                
-                # Add fileType parameter only for documents
-                if message_type == 'document' and file_type:
-                    form_data['fileType'] = file_type
-                
-                response = requests.post(
-                    api_url,
-                    data=form_data,
-                    files=files,
-                    headers=headers,
-                    timeout=120
-                )
-            else:
-                # Simple JSON body
-                response = requests.post(
-                    api_url,
-                    json={
-                        'to': phone,
-                        'messageType': message_type,
-                        'body': plain_text,
-                    },
-                    headers=headers,
-                    timeout=120
-                )
+                        files.append((f'files[{len(files)}]', (filename, io.BytesIO(file_data), mimetype)))
             
-            # Handle response
-            if response.status_code in [200, 201]:
+            # Always send with FormData - files will be empty list [] if no attachments
+            response = requests.post(
+                api_url,
+                data=form_data,
+                files=files if files else [],  # Empty list [] if no attachments
+                headers=headers,
+                timeout=120
+            )
+            
+            # Handle response - 201 indicates QR code scanning is needed
+            if response.status_code == 201:
+                # 201 status means QR code scanning is required
+                # QR code will be received via socket event with type 'qr_code' or 'status' with type 'qr_code'
+                try:
+                    response_data = response.json()
+                    message = response_data.get('message', 'Please scan QR code to connect WhatsApp')
+                except Exception as json_error:
+                    message = 'Please scan QR code to connect WhatsApp'
+                    _logger.warning(f"Could not parse response JSON for QR popup: {json_error}")
+                
+                # QR code will be updated via socket events - create popup with empty QR code initially
+                qr_popup_vals = {
+                    'qr_code_image': '',  # Will be updated via socket event
+                    'qr_code_filename': 'whatsapp_qr_code.png',
+                    'from_number': self.from_connection_id.from_field,
+                    'from_name': self.from_connection_id.name,
+                    'message': message,
+                    'api_key': self.from_connection_id.api_key,
+                    'phone_number': self.from_connection_id.from_field,
+                    'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
+                    'countdown_seconds': 120,
+                    'is_expired': False,
+                }
+                # Set appropriate original ID based on context
+                if test_wizard_id:
+                    qr_popup_vals['original_test_wizard_id'] = test_wizard_id
+                    qr_popup_vals['test_phone_to'] = test_phone_to or phone
+                    qr_popup_vals['test_campaign_id'] = self.id
+                else:
+                    qr_popup_vals['original_campaign_id'] = self.id
+                
+                qr_popup = self.env['whatsapp.qr.popup'].create(qr_popup_vals)
+                
+                return {
+                    'qr_popup_needed': True,
+                    'qr_popup_id': qr_popup.id,
+                }
+            
+            # Handle 200 status (success)
+            elif response.status_code == 200:
                 try:
                     response_data = response.json()
                 except Exception as json_error:
                     return {'success': False, 'error': f'Invalid JSON: {json_error}'}
                 
-                # Check for QR code in response (201 status or qrCode in data)
-                qr_code_in_response = response_data.get('qrCode') or (
-                    response_data.get('data', {}).get('qrCode') if response_data.get('data') else None
-                )
-                
-                if qr_code_in_response or response.status_code == 201:
-                    # QR code needed - create popup
-                    # Phone mismatch will be handled via socket events and will update this popup
-                    qr_code_base64 = qr_code_in_response or ''
-                    if isinstance(qr_code_base64, str) and not qr_code_base64.startswith('data:image'):
-                        if qr_code_base64:
-                            qr_code_base64 = f"data:image/png;base64,{qr_code_base64}"
-                    
-                    qr_popup_vals = {
-                        'qr_code_image': qr_code_base64,
-                        'qr_code_filename': 'whatsapp_qr_code.png',
-                        'from_number': self.from_connection_id.from_field,
-                        'from_name': self.from_connection_id.name,
-                        'message': response_data.get('message', 'Please scan QR code to connect WhatsApp'),
-                        'api_key': self.from_connection_id.api_key,
-                        'phone_number': self.from_connection_id.from_field,
-                        'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
-                        'countdown_seconds': 120,
-                        'is_expired': False,
-                    }
-                    # Set appropriate original ID based on context
-                    if test_wizard_id:
-                        qr_popup_vals['original_test_wizard_id'] = test_wizard_id
-                        qr_popup_vals['test_phone_to'] = test_phone_to or phone
-                        qr_popup_vals['test_campaign_id'] = self.id
-                    else:
-                        qr_popup_vals['original_campaign_id'] = self.id
-                    
-                    qr_popup = self.env['whatsapp.qr.popup'].create(qr_popup_vals)
-                    
-                    return {
-                        'qr_popup_needed': True,
-                        'qr_popup_id': qr_popup.id,
-                    }
-                
-                # No QR needed - check success flag
+                # Check success flag
                 if response_data.get('success', False):
                     return {'success': True}
                 else:
@@ -680,7 +669,7 @@ class WhatsAppMarketingCampaign(models.Model):
                     error_detail = response.text[:200] if response.text else "Unknown error"
                 
                 return {'success': False, 'error': error_detail}
-                
+
         except Exception as e:
             _logger.exception(f"Error sending to {contact_name}: {e}")
             return {'success': False, 'error': str(e)}

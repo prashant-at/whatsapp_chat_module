@@ -16,10 +16,9 @@
 }
 
 .new-chat-btn {
-    background: #25d366;
-    color: white;
+   
+    color: rgb(0, 0, 0);
     border: none;
-    border-radius: 50%;
     width: 32px;
     height: 32px;
     display: flex;
@@ -27,7 +26,6 @@
     justify-content: center;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .new-chat-btn:hover {
@@ -36,7 +34,11 @@
 }
 
 .new-chat-btn i {
-    font-size: 14px;
+    font-size: 16px;
+}
+.new-chat-btn img {
+    width: 16px;
+    height: 16px;
 }
 
 /* Contacts Popup */

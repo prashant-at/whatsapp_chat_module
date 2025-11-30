@@ -551,7 +551,7 @@ class WhatsappCompose(models.TransientModel):
                     
                     # Send to WhatsApp API
                     # api_url = "http://localhost:3000/api/whatsapp/send"
-                    api_url = self.env['whatsapp.connection'].get_backend_api_url() + "/api/send"
+                    api_url = self.env['whatsapp.connection'].get_backend_api_url() + "/api/message"
                     print(f"API URL: {api_url}")
                     # Normalize recipient phone: keep one space after country code, remove others
                     
@@ -565,10 +565,16 @@ class WhatsappCompose(models.TransientModel):
                     else:
                         normalized_to = re.sub(r'\s+', '', raw_phone)
                     
+                    print('messageType',message_type)
+                    form_data = {
+                        'byChatId': 'false',
+                        'to': normalized_to,
+                        'messageType': message_type,
+                        'body': plain_text,
+                    }
 
+                    files = []
                     if has_attachments:
-                        # Build multipart form with files
-                        files = []
                         for attachment in self.attachment_ids:
                             file_data = b''
                             try:
@@ -607,40 +613,73 @@ class WhatsappCompose(models.TransientModel):
                             # Add file if we have actual data
                             if file_data and len(file_data) > 0:
                                 files.append((
-                                    'files',
+                                    f'files[{len(files)}]',
                                     (filename, io.BytesIO(file_data), mimetype)
                                 ))
-                            
-
-                        form_data = {
-                            'to': normalized_to,
-                            'messageType': message_type,
-                            'body': plain_text,
-                        }
-                        
-                        response = requests.post(
-                            api_url,
-                            data=form_data,
-                            files=files,
-                            headers=headers,
-                            timeout=120
-                        )
-                    else:
-                        # Simple JSON body for chat message
-                        response = requests.post(
-                            api_url,
-                            json={
-                                'to': normalized_to,
-                                'messageType': message_type,
-                                'body': plain_text,
-                            },
-                            headers=headers,
-                            timeout=120
-                        )
                     
-                    print("send response",response.json())
-                    # Accept both 200 and 201 as success (201 = QR code required)
-                    if response.status_code in [200, 201]:
+                    # Always send with FormData - files will be empty list [] if no attachments
+                    response = requests.post(
+                        api_url,
+                        data=form_data,
+                        files=files if files else [],  # Empty list [] if no attachments
+                        headers=headers,
+                        timeout=120
+                    )
+                   
+                    print("send response",response)
+                    # Handle 201 status - QR code will come via socket event, not in response
+                    if response.status_code == 201:
+                        # 201 status means QR code scanning is required
+                        # QR code will be received via socket event with type 'qr_code' or 'status' with type 'qr_code'
+                        try:
+                            response_data = response.json()
+                            message = response_data.get('message', 'Please scan QR code to connect WhatsApp')
+                        except Exception as json_error:
+                            message = 'Please scan QR code to connect WhatsApp'
+                            _logger.warning(f"Could not parse response JSON for QR popup: {json_error}")
+                        
+                        # Store context for later chatter logging
+                        active_model = self.model or self.env.context.get('active_model')
+                        active_id = self.env.context.get('active_id')
+                        
+                        # Create QR popup - QR code will be updated via socket events
+                        # The popup will listen for socket events and update itself automatically
+                        qr_popup = self.env['whatsapp.qr.popup'].create({
+                            'qr_code_image': '',  # Will be updated via socket event
+                            'qr_code_filename': 'whatsapp_qr_code.png',
+                            'from_number': self.from_number.from_field,
+                            'from_name': self.from_number.name,
+                            'original_wizard_id': self.id,
+                            'message': message,
+                            'api_key': self.from_number.api_key,
+                            'phone_number': self.from_number.from_field,
+                            'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),  # 2 minutes
+                            'countdown_seconds': 120,
+                            'is_expired': False,
+                            'retry_count': 0,
+                            'last_qr_string': '',
+                            # Store context for chatter logging
+                            'original_context': json.dumps(self.env.context),
+                            'active_model': active_model or '',
+                            'active_id': active_id or 0,
+                        })
+                        self.qr_popup_id = qr_popup.id
+                        self.write({'qr_popup_id': qr_popup.id})
+                        
+                        # Return early when QR is needed. After QR authentication,
+                        # action_close_qr_popup() will call _send_messages_via_socket() again,
+                        # processing ALL recipients from the beginning.
+                        # The QR code will be received and displayed via socket events
+                        return {
+                            'qr_popup_needed': True,
+                            'qr_popup_id': qr_popup.id,
+                            'success_count': 0,
+                            'error_count': 0,
+                            'error_messages': [],
+                        }
+                    
+                    # Handle 200 status (success)
+                    elif response.status_code == 200:
                         # MAIN PATH ONLY: strictly parse JSON; treat invalid JSON as error
                         try:
                             response_data = response.json()
@@ -650,54 +689,7 @@ class WhatsappCompose(models.TransientModel):
                             _logger.error(f"Invalid JSON response from API for {partner.name}: {json_error}")
                             continue
 
-                        # If API signals a QR is required (201 status or qrCode in response), open popup and return immediately
-                        # Check for QR code in response data (could be at top level or nested in 'data')
-                        qr_code_in_response = response_data.get('qrCode') or (
-                            response_data.get('data', {}).get('qrCode') if response_data.get('data') else None
-                        )
-                        
-                        if qr_code_in_response:
-                            qr_code_base64 = qr_code_in_response
-                            
-                            # Store context for later chatter logging
-                            active_model = self.model or self.env.context.get('active_model')
-                            active_id = self.env.context.get('active_id')
-                            
-                            qr_popup = self.env['whatsapp.qr.popup'].create({
-                                'qr_code_image': qr_code_base64,
-                                'qr_code_filename': 'whatsapp_qr_code.png',
-                                'from_number': self.from_number.from_field,
-                                'from_name': self.from_number.name,
-                                'original_wizard_id': self.id,
-                                'message': response_data.get('message', 'Please scan QR code to connect WhatsApp'),
-                                'api_key': self.from_number.api_key,
-                                'phone_number': self.from_number.from_field,
-                                'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),  # 2 minutes
-                                'countdown_seconds': 120,
-                                'is_expired': False,
-                                'retry_count': 0,
-                                'last_qr_string': qr_code_base64[:100] if qr_code_base64 else '',
-                                # Store context for chatter logging
-                                'original_context': json.dumps(self.env.context),
-                                'active_model': active_model or '',
-                                'active_id': active_id or 0,
-                            })
-                            self.qr_popup_id = qr_popup.id
-                            self.write({'qr_popup_id': qr_popup.id})
-                            
-                            # Return early when QR is needed. After QR authentication,
-                            # action_close_qr_popup() will call _send_messages_via_socket() again,
-                            # processing ALL recipients from the beginning.
-                            return {
-                                'qr_popup_needed': True,
-                                'qr_popup_id': qr_popup.id,
-                                'success_count': 0,
-                                'error_count': 0,
-                                'error_messages': [],
-                            }
-
-                        
-                        # No QR required: check success flag
+                        # Check success flag
                         if response_data.get('success', False):
                             success_count += 1
                         else:
@@ -709,6 +701,7 @@ class WhatsappCompose(models.TransientModel):
                             error_msg = f"{partner.name}: {error_detail}"
                             error_messages.append(error_msg)
                             _logger.error(f"API returned success=false for {partner.name}: {error_detail}")
+
                     else:
                         # Try to extract error message from response
                         error_detail = "Unknown error"

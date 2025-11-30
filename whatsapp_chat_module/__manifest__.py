@@ -39,6 +39,7 @@
     "assets": {
     "web.assets_backend": [
         "whatsapp_chat_module/static/src/css/contacts_popup.css",
+        "whatsapp_chat_module/static/lib/emoji-mart/emoji-mart-bundle.js",
         "whatsapp_chat_module/static/src/js/socket_service.js",
         "whatsapp_chat_module/static/src/js/socket_initializer.js",
         "whatsapp_chat_module/static/src/js/whatsapp_web_client_action.js",
