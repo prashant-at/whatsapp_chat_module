@@ -178,7 +178,7 @@ export class WhatsAppWebClientAction extends Component {
                     this.state.canSendMessages = false;
                     this.state.banner = 'Disconnected. Please re-scan.';
                     this.state.stage = this.state.stage === 'ready' ? 'qr' : this.state.stage;
-                    this.state.showQRModal = true;
+                    // this.state.showQRModal = true;
                     this.updateConnectionStatuses();
                 } else if (type === 'qr_code_mismatch') {
                     try {
@@ -223,20 +223,8 @@ export class WhatsAppWebClientAction extends Component {
                 console.error("[WA] Error in chat handler:", error.message || error);
             }
         }));
-        this._unsubscribe.push(socketService.on('qr_code', (data) => {
-            try {
-                this._handleQRCode(data);
-            } catch (error) {
-                console.error("[WA] Error in QR code handler:", error.message || error);
-            }
-        }));
-        this._unsubscribe.push(socketService.on('phone_mismatch', (data) => {
-            try {
-                this._handlePhoneMismatch(data);
-            } catch (error) {
-                console.error("[WA] Error in phone mismatch handler:", error.message || error);
-            }
-        }));
+      
+       
         this._unsubscribe.push(socketService.on('contact', (contactData) => {
             console.log("contact event",contactData)
             try {
@@ -260,7 +248,7 @@ export class WhatsAppWebClientAction extends Component {
             this.state.qrImage = img.startsWith('data:image') ? img : `data:image/png;base64,${img}`;
         }
         this.state.stage = 'qr';
-        this.state.showQRModal = true;
+        // this.state.showQRModal = true;
         // this.state.isLoading = false;
     }
 
@@ -271,7 +259,7 @@ export class WhatsAppWebClientAction extends Component {
         }
         this.state.error = data?.message || 'Phone mismatch. Please scan with the correct number.';
         this.state.stage = 'qr';
-        this.state.showQRModal = true;
+        // this.state.showQRModal = true;
         // this.state.isLoading = false;
     }
 
@@ -548,11 +536,15 @@ export class WhatsAppWebClientAction extends Component {
                     preview = latest.body || preview || "";
             }
         }
+        // Determine direction of latest message
+        const latestMessageDirection = latest.fromMe ? 'outbound' : (latest.direction || (latest.fromMe === false ? 'inbound' : null));
+        
         return {
             ...chat,
             latestMessage: preview,
             latestMessageId: latest.id || chat.latestMessageId,
             latestMessageAck: latest.ack ? parseInt(latest.ack, 10) : 0,
+            latestMessageDirection: latestMessageDirection || 'inbound', // Default to inbound if not specified
             timestamp: latest.timestamp || chat.timestamp,
             lastMessageType: latest.messageType || chat.lastMessageType,
         };
@@ -615,7 +607,7 @@ export class WhatsAppWebClientAction extends Component {
         if (connection) {
             this.state.error = '';
             this.state.qrImage = null;
-            this.state.showQRModal = false;
+            // this.state.showQRModal = false;
             this.state.isLoading = false;
             this.state.switchingConnection = true;
             this.state.selectedConnection = connection;
@@ -1354,8 +1346,12 @@ export class WhatsAppWebClientAction extends Component {
         }
     }
 
+    buildDataUrl(fileData,mimeType){
+    if(!fileData) return null;
+    return `data:${mimeType};base64,${fileData}`;
+    }
+
     _mapBackendMessageToUI(m) {
-        console.log("filepath",m.filePath);
         const direction = m.fromMe ? 'outbound' : 'inbound';
         const ack = parseInt(m.ack, 10) || 0;
         let status = 'sent';
@@ -1399,6 +1395,7 @@ export class WhatsAppWebClientAction extends Component {
         return {
             ...m,
             direction,
+            mediaData: this.buildDataUrl(m.fileData,m.mimeType),
             status: status,
             ack: ack,
             reactions: reactions,
@@ -1437,6 +1434,8 @@ export class WhatsAppWebClientAction extends Component {
         // console.log("selectedMedia",selectedMedia.file)
         this.state.messageInput = "";
         this.removeSelectedMedia();
+        // Reset textarea height after clearing input
+        setTimeout(() => this.resetTextareaHeight(), 0);
         const messageType = selectedMedia ? selectedMedia.type : 'chat';
         try {
             this.state.mediaUploading = true;
@@ -1701,7 +1700,6 @@ export class WhatsAppWebClientAction extends Component {
                     } catch (error) {
                         console.error('[WA] Error initializing EmojiMart:', error);
                         // Fallback: show error message
-                        pickerContainer.innerHTML = '<div style="padding: 20px; text-align: center; color: #666;">Failed to load emoji picker. Error: ' + error.message + '</div>';
                     }
                 }
             }, 100);
@@ -1857,6 +1855,33 @@ export class WhatsAppWebClientAction extends Component {
         if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             this.sendMessage();
+        }
+    }
+
+    handleTextareaInput(event) {
+        const textarea = event.target;
+        // Reset height to auto to get the correct scrollHeight
+        textarea.style.height = 'auto';
+        
+        // Calculate the new height (line-height is 20px, padding is 18px total)
+        const lineHeight = 20;
+        const maxRows = 4;
+        const maxHeight = (lineHeight * maxRows) + 18; // 4 rows + padding
+        const newHeight = Math.min(textarea.scrollHeight, maxHeight);
+        
+        // Set the new height
+        textarea.style.height = newHeight + 'px';
+        
+        // Show scrollbar if content exceeds max height
+        textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }
+
+    resetTextareaHeight() {
+        // Reset textarea height after message is sent
+        if (this.refs && this.refs.messageTextarea && this.refs.messageTextarea.el) {
+            const textarea = this.refs.messageTextarea.el;
+            textarea.style.height = 'auto';
+            textarea.style.overflowY = 'hidden';
         }
     }
     
@@ -2083,14 +2108,16 @@ export class WhatsAppWebClientAction extends Component {
         switch(option) {
             case 'document':
             case 'media':
-            case 'camera':
             case 'audio':
                 this.openFilePickerForType(option);
                 break;
             case 'contact':
                 this.state.contactSharingMode = true;
                 this.state.selectedContactsForSharing = [];
-                this.toggleContactsPopup();
+                this.state.showContactsPopup = true;
+                if (this.state.contacts.length === 0) {
+                    this.loadContacts(1, 50, { append: false });
+                }
                 break;
             // case 'location':
             //     this.openLocationPicker();
@@ -2118,11 +2145,7 @@ export class WhatsAppWebClientAction extends Component {
                 accept: ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.ppt,.pptx"
             },
             media: {
-                accept: "image/*,video/*"
-            },
-            camera: {
-                accept: "image/*,video/*",
-                capture: "environment"
+                accept: "image/*"
             },
             audio: {
                 accept: "audio/*"
@@ -2414,75 +2437,7 @@ export class WhatsAppWebClientAction extends Component {
         } catch (error) {
             console.error("[WA] Error handling reaction event:", error.message || error);
         }
-        // try {
-        //     if (!msg.reactions || !msg.Id) return;
-        //     const targetMessage = this.state.messages.find(m => m.id === msg.messageId);
-        //     if (!targetMessage) return;
-            
-        //     // Initialize reactions array if it doesn't exist
-        //     if (!targetMessage.reactions) {
-        //         targetMessage.reactions = [];
-        //     }
-            
-        //     // Find existing reaction for this emoji
-        //     // const existingReaction = targetMessage.reactions.find(r => r.emoji === msg.reaction);
-        //     // const senderId = msg.senderId || msg.from || '';
-        //     const senderId = msg.senderId || msg.from || '';
-        //     const emoji = msg.reaction;
-            
-        //      // Check if reaction is being removed (deletedAt exists)
-        // if (msg.deletedAt) {
-        //     // Remove this sender's reaction for this emoji
-        //     const existingReaction = targetMessage.reactions.find(r => r.emoji === emoji);
-        //     if (existingReaction) {
-        //         // Remove senderId from users array
-        //         existingReaction.users = existingReaction.users.filter(id => id !== senderId);
-        //         existingReaction.count = Math.max(0, existingReaction.count - 1);
-                
-        //         // Remove the reaction entry if count reaches 0
-        //         if (existingReaction.count === 0) {
-        //             targetMessage.reactions = targetMessage.reactions.filter(r => r.emoji !== emoji);
-        //         }
-        //     }
-        // } else {
-        //     // Adding a reaction
-        //     const existingReaction = targetMessage.reactions.find(r => r.emoji === emoji);
-            
-        //     if (existingReaction) {
-        //         // Check if sender already reacted with this emoji
-        //         if (!existingReaction.users.includes(senderId)) {
-        //             existingReaction.users.push(senderId);
-        //             existingReaction.count++;
-        //         }
-        //     } else {
-        //         // Create new reaction
-        //         targetMessage.reactions.push({
-        //             emoji: emoji,
-        //             count: 1,
-        //             users: senderId ? [senderId] : []
-        //         });
-        //     }
-        // }
-        // } catch (error) {
-        // console.error("[WA] Error handling reaction event:", error.message || error);
-        // }
-        //     if (existingReaction) {
-        //         // Check if sender already reacted with this emoji
-        //         if (!existingReaction.users.includes(senderId)) {
-        //             existingReaction.users.push(senderId);
-        //             existingReaction.count++;
-        //         }
-        //     } else {
-        //         // Create new reaction
-        //         targetMessage.reactions.push({
-        //             emoji: msg.reaction,
-        //             count: 1,
-        //             users: senderId ? [senderId] : []
-        //         });
-        //     }
-        // } catch (error) {
-        //     console.error("[WA] Error handling reaction event:", error.message || error);
-        // }
+        
     }
     
     handleMessageEvent(chatData) {

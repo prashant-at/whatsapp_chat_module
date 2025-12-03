@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import html2text
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 import logging
@@ -144,10 +145,12 @@ class WhatsAppMarketingCampaign(models.Model):
         help="Random delay in seconds before next message (60-120)"
     )
     
-    waiting_for_qr = fields.Boolean(
-        'Waiting for QR Scan',
-        default=False,
-        help="Campaign is paused waiting for user to scan QR code"
+    
+
+    pending_requests = fields.Text(
+        'Pending Requests',
+        default='[]',
+        help="JSON array of API requests that failed due to connection issues (status 201). Will be retried when connection is ready."
     )
 
     @api.model
@@ -220,8 +223,9 @@ class WhatsAppMarketingCampaign(models.Model):
                     continue
                 try:
                     from ast import literal_eval
-                    domain = literal_eval(campaign.mailing_domain) if campaign.mailing_domain else []
-                except:
+                    domain = self._safe_eval_domain(campaign.mailing_domain)
+                except Exception as e:
+                    _logger.warning(f"Error evaluating domain for campaign {campaign.id}: {e}")
                     domain = []
                 records = self.env[campaign.mailing_model_real].search(domain)
             
@@ -234,6 +238,29 @@ class WhatsAppMarketingCampaign(models.Model):
             
             campaign.total_recipients = count
 
+    def _safe_eval_domain(self, domain_str):
+        """Safely evaluate domain string to prevent code injection"""
+        if not domain_str:
+            return []
+        
+        try:
+            from ast import literal_eval
+            domain = literal_eval(domain_str)
+            
+            # Validate domain format - must be a list
+            if not isinstance(domain, list):
+                raise ValueError("Domain must be a list")
+            
+            # Validate each item is a tuple/list of length 3 (field, operator, value)
+            for item in domain:
+                if not isinstance(item, (list, tuple)) or len(item) != 3:
+                    raise ValueError("Invalid domain format: each item must be a tuple of length 3")
+            
+            return domain
+        except (ValueError, SyntaxError) as e:
+            _logger.warning(f"Invalid domain format: {e}")
+            return []
+    
     def _get_phone_from_record(self, record):
         """Extract phone number from a record (contact, partner, etc.)"""
         # Try whatsapp.mailing.contact first
@@ -274,8 +301,9 @@ class WhatsAppMarketingCampaign(models.Model):
                 return recipients
             try:
                 from ast import literal_eval
-                domain = literal_eval(self.mailing_domain) if self.mailing_domain else []
-            except:
+                domain = self._safe_eval_domain(self.mailing_domain)
+            except Exception as e:
+                _logger.warning(f"Error evaluating domain for campaign {self.id}: {e}")
                 domain = []
             records = self.env[self.mailing_model_real].search(domain)
         
@@ -336,8 +364,260 @@ class WhatsAppMarketingCampaign(models.Model):
             'context': ctx,
         }
 
+    def _clean_phone_for_marketing_api(self, phone):
+        """Clean phone number for marketing API: remove +, spaces, keep only digits
+        Example: '+91 9157000128' -> '919157000128'
+        
+        Args:
+            phone: Phone number string (may contain +, spaces)
+        
+        Returns:
+            str: Cleaned phone number with only digits
+        """
+        if not phone:
+            return ''
+        # Remove all non-digit characters (+, spaces, etc.)
+        return re.sub(r'\D', '', phone)
+    
+    def _determine_message_type(self, attachments=None):
+        """Determine message type based on attachments (like sendWhatsapp in compose wizard)
+        
+        Marketing API accepts messageType: image, video, document, chat
+        
+        Args:
+            attachments: List of attachment records (defaults to self.attachment_ids)
+        
+        Returns:
+            tuple: (message_type, file_type) where file_type is only set for documents
+        """
+        if attachments is None:
+            attachments = self.attachment_ids
+        
+        has_attachments = bool(attachments)
+        
+        if not has_attachments:
+            return 'chat', None
+        
+        # File extension mappings (same as _send_to_recipient_via_api)
+        image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.webp', '.ico', '.heic'}
+        video_extensions = {'.mp4', '.webm', '.ogv', '.avi', '.mov', '.wmv', '.mkv', '.flv', '.3gp'}
+        audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.mid', '.midi'}
+        document_extensions = {
+            '.txt', '.csv', '.html', '.css', '.js', '.json', '.xml', '.md', '.yml', '.yaml', '.pdf', 
+            '.zip', '.rar', '.7z', '.tar', '.gz', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
+            '.odt', '.ods', '.odp', '.odg', '.py', '.java', '.c', '.cpp', '.sh', '.php', '.rb', '.sql', 
+            '.ics', '.vcard', '.vcf', '.ttf', '.otf', '.woff', '.woff2', '.deb', '.rpm', '.apk', '.dmg', 
+            '.pkg', '.bin', '.wasm'
+        }
+        
+        # Check first attachment to determine type
+        attachment = attachments[0]
+        filename = (attachment.name or 'attachment').lower()
+        
+        # Extract file extension
+        if '.' in filename:
+            file_ext = '.' + filename.rsplit('.', 1)[1]
+        else:
+            file_ext = None
+        
+        # Determine message type based on file extension
+        # Marketing API accepts: image, video, document, chat (audio files are sent as document)
+        if file_ext in image_extensions:
+            return 'image', None
+        elif file_ext in video_extensions:
+            return 'video', None
+        elif file_ext in audio_extensions:
+            # Audio files are sent as document type for marketing API
+            file_type = file_ext[1:].lower() if file_ext else 'bin'
+            return 'document', file_type
+        elif file_ext in document_extensions:
+            file_type = file_ext[1:].lower()  # Remove dot and lowercase
+            return 'document', file_type
+        else:
+            # Try to infer from mimetype
+            mimetype = (getattr(attachment, 'mimetype', '') or '').lower()
+            if any(img in mimetype for img in ['image', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']):
+                return 'image', None
+            elif any(vid in mimetype for vid in ['video', 'mp4', 'webm', 'avi', 'mov']):
+                return 'video', None
+            elif any(aud in mimetype for aud in ['audio', 'mp3', 'wav', 'ogg', 'm4a']):
+                # Audio files are sent as document type for marketing API
+                return 'document', 'bin'
+            else:
+                # Default to document with bin fileType
+                return 'document', 'bin'
+    
+    def _send_via_marketing_api(self, body, tos, message_type='chat'):
+        """Call new /api/marketing endpoint with pending request support
+        
+        Args:
+            body: Message body/content
+            tos: List of recipient dicts with 'name' and 'phone' keys
+            message_type: Type of message (default: 'chat')
+        
+        Returns:
+            dict: {'success': bool, 'pending': bool, 'error': str, 'response': dict}
+        """
+        try:
+            # Get backend URL and API key
+            backend_url = self.from_connection_id.get_backend_api_url() or "http://localhost:4000"
+            api_url = f"{backend_url}/api/marketing"
+            api_key = self.from_connection_id.api_key
+            phone_number = self.from_connection_id.from_field
+            
+            if not api_key:
+                return {'success': False, 'error': 'API key not found'}
+            
+            # Clean phone number for header (remove +, spaces)
+            cleaned_phone = self._clean_phone_for_marketing_api(phone_number)
+            
+            # Prepare form data
+            form_data = {
+                'messageType': message_type,
+                'body': body,
+            }
+            
+            # Clean phone numbers in tos and add recipients as tos[0], tos[1], etc.
+            cleaned_tos = []
+            for recipient in tos:
+                cleaned_recipient = {
+                    'name': recipient.get('name', ''),
+                    'phone': self._clean_phone_for_marketing_api(recipient.get('phone', ''))
+                }
+                cleaned_tos.append(cleaned_recipient)
+            
+            for index, recipient in enumerate(cleaned_tos):
+                form_data[f'tos[{index}]'] = json.dumps(recipient)
+            
+            # Prepare files (attachments) for media types: image, video, document
+            # Marketing API accepts messageType: image, video, document, chat
+            files = []
+            if message_type in ['image', 'video', 'document'] and self.attachment_ids:
+                import io
+                for attachment in self.attachment_ids:
+                    try:
+                        # Decode attachment data from base64
+                        b64_value = attachment.sudo().datas or ''
+                        if b64_value:
+                            # Handle string/bytes conversion
+                            if isinstance(b64_value, bytes):
+                                b64_value = b64_value.decode('utf-8', errors='ignore')
+                            # Remove data URI prefix if present
+                            if isinstance(b64_value, str) and b64_value.startswith('data:'):
+                                b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
+                            
+                            # Fix base64 padding
+                            if isinstance(b64_value, str):
+                                pad = len(b64_value) % 4
+                                if pad:
+                                    b64_value = b64_value + ('=' * (4 - pad))
+                                
+                                file_data = base64.b64decode(b64_value)
+                        else:
+                            continue
+                    except Exception as e:
+                        _logger.error(f"Error decoding attachment {attachment.id} for marketing campaign: {e}")
+                        continue
+                    
+                    # Sanitize filename
+                    raw_name = (attachment.name or 'attachment')
+                    filename = raw_name.replace('/', '_').replace('\\', '_')
+                    mimetype = getattr(attachment, 'mimetype', None) or 'application/octet-stream'
+                    
+                    # Force PDF mimetype if filename ends with .pdf
+                    if filename.lower().endswith('.pdf'):
+                        mimetype = 'application/pdf'
+                    
+                    # Add file
+                    if file_data and len(file_data) > 0:
+                        files.append((
+                            f'files[{len(files)}]',
+                            (filename, io.BytesIO(file_data), mimetype)
+                        ))
+            
+            # Make request with lowercase headers
+            headers = {
+                'x-api-key': api_key,
+                'x-phone-number': phone_number,
+                'origin': self._get_origin(),
+            }
+            
+            response = requests.post(
+                api_url,
+                data=form_data,
+                files=files if files else [],  # Always include files parameter (empty array if no attachments)
+                headers=headers,
+                timeout=30
+            )
+            
+            # Status 201 - store in pending requests, wait for socket event
+            if response.status_code == 201:
+                pending_requests = json.loads(self.pending_requests or '[]')
+                
+                # Store file data as base64 for JSON serialization
+                files_data = []
+                if files:
+                    for f in files:
+                        field_name = f[0]  # e.g., 'files[0]'
+                        file_tuple = f[1]  # (filename, BytesIO, mimetype)
+                        
+                        if isinstance(file_tuple, tuple) and len(file_tuple) >= 3:
+                            filename = file_tuple[0]
+                            file_io = file_tuple[1]
+                            mimetype = file_tuple[2]
+                            
+                            # Read bytes from BytesIO
+                            if hasattr(file_io, 'read'):
+                                file_bytes = file_io.read()
+                                if hasattr(file_io, 'seek'):
+                                    file_io.seek(0)
+                            else:
+                                file_bytes = file_io if isinstance(file_io, bytes) else b''
+                            
+                            # Encode to base64 for JSON storage
+                            file_b64 = base64.b64encode(file_bytes).decode('utf-8') if file_bytes else ''
+                            files_data.append((field_name, filename, file_b64, mimetype))
+                
+                pending_requests.append({
+                    'type': 'sendMarketing',
+                    'data': {
+                        'body': body,
+                        'tos': cleaned_tos,  # Store cleaned tos (with cleaned phone numbers)
+                        'message_type': message_type,
+                        'files': files_data,  # Store base64-encoded files
+                    },
+                    'timestamp': fields.Datetime.now().isoformat(),
+                })
+                self.write({'pending_requests': json.dumps(pending_requests)})
+                _logger.info(f"[Campaign {self.name}] Request stored in pending (status 201). Waiting for socket event.")
+                return {'success': False, 'pending': True}
+            
+            # Status 200 - success
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    return {'success': True, 'response': response_data}
+                except Exception as json_error:
+                    _logger.warning(f"[Campaign {self.name}] Could not parse response JSON: {json_error}")
+                    return {'success': True, 'response': {}}
+            else:
+                error_msg = f"API returned status {response.status_code}"
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('message', error_msg)
+                except:
+                    pass
+                return {'success': False, 'error': error_msg}
+                
+        except requests.exceptions.RequestException as e:
+            _logger.exception(f"[Campaign {self.name}] Network error calling marketing API: {e}")
+            return {'success': False, 'error': f'Network error: {str(e)}'}
+        except Exception as e:
+            _logger.exception(f"[Campaign {self.name}] Error calling marketing API: {e}")
+            return {'success': False, 'error': str(e)}
+
     def action_send(self):
-        """Send first message to check authentication, then queue rest for cron"""
+        """Send campaign via new marketing API - backend handles all sending"""
         self.ensure_one()
         
         # Prevent duplicate sends
@@ -370,86 +650,67 @@ class WhatsAppMarketingCampaign(models.Model):
         if not recipients:
             raise UserError(_("No valid phone numbers found in selected mailing lists"))
         
-        # STEP 1: Send first message synchronously to check if QR is needed
-        first_recipient = recipients[0]
-        first_result = self._send_to_recipient_via_api(
-            first_recipient['phone'],
-            first_recipient['name'],
-            self.body,
-            self.attachment_ids
+        # Prepare recipients for API
+        tos = []
+        for recipient in recipients:
+            tos.append({
+                "name": recipient.get('name', ''),
+                "phone": recipient['phone']
+            })
+        
+        # Determine message type based on attachments (like sendWhatsapp)
+        message_type, file_type = self._determine_message_type()
+        
+        textContent = html2text.html2text(self.body) if self.body else ""
+        # Call new marketing API
+        result = self._send_via_marketing_api(
+            body=textContent,
+            tos=tos,
+            message_type=message_type
         )
         
-        # If QR popup needed, return it
-        if first_result.get('qr_popup_needed'):
-            # Store ALL recipients (including first one) - it wasn't sent yet!
-            first_delay = random.uniform(60.0, 120.0)
-            
-            self.write({
-                'state': 'sending',  # Mark as sending so it can't be sent again
-                'pending_recipients': json.dumps(recipients),  # Store ALL recipients including first
-                'current_recipient_index': 0,
-                'sent_count': 0,  # No messages sent yet (QR needed)
-                'failed_count': 0,
-                'last_send_time': False,
-                'next_send_delay': first_delay,
-                'waiting_for_qr': True,  # Prevent cron from processing until QR is scanned
-            })
-            
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'WhatsApp Authentication Required',
-                'res_model': 'whatsapp.qr.popup',
-                'res_id': first_result.get('qr_popup_id'),
-                'view_mode': 'form',
-                'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                'target': 'new',
-            }
-        
-        # STEP 2: If first message sent successfully, queue remaining recipients for cron
-        if first_result.get('success'):
-            self.sent_count = 1
-            remaining_recipients = recipients[1:] if len(recipients) > 1 else []
-            first_delay = random.uniform(60.0, 120.0)
-            
-            if remaining_recipients:
-                # Queue remaining recipients for cron processing
+        # Handle pending (status 201) - request stored, waiting for socket event
+        if result.get('pending'):
                 self.write({
                     'state': 'sending',
-                    'pending_recipients': json.dumps(remaining_recipients),
-                    'current_recipient_index': 0,
-                    'sent_count': 1,
+                'sent_count': 0,
                     'failed_count': 0,
-                    'last_send_time': fields.Datetime.now(),  # Set time so cron waits for delay
-                    'next_send_delay': first_delay,
                 })
                 
                 return {
                     'type': 'ir.actions.client',
                     'tag': 'display_notification',
                     'params': {
-                        'title': _('Campaign Started'),
-                        'message': _('First message sent successfully. Remaining %d messages will be sent in the background with random delays (60-120 seconds).') % len(remaining_recipients),
+                    'title': _('Campaign Queued'),
+                    'message': _('Campaign queued successfully. Waiting for connection to be ready. QR code will appear if authentication is needed.'),
                         'type': 'info',
                         'sticky': False,
                     }
                 }
-            else:
-                # Only one recipient, already sent
-                self.write({'state': 'sent'})
-                return {
-                    'type': 'ir.actions.client',
-                    'tag': 'display_notification',
-                    'params': {
-                        'title': _('Campaign Sent'),
-                        'message': _('Campaign sent successfully.'),
-                        'type': 'success',
+        
+        # Handle success
+        if result.get('success'):
+            self.write({
+                'state': 'sent',
+                'sent_count': len(recipients),
+                'failed_count': 0,
+            })
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Campaign Sent'),
+                    'message': _('Campaign sent successfully to %d recipients. Backend is processing the messages.') % len(recipients),
+                    'type': 'success',
+                    'sticky': False,
                     }
                 }
         else:
-            # First message failed
-            self.failed_count = 1
+            # Failed
+            error_msg = result.get('error', 'Unknown error')
             self.write({'state': 'draft'})
-            raise UserError(_("Failed to send first message: %s") % first_result.get('error', 'Unknown error'))
+            raise UserError(_("Failed to send campaign: %s") % error_msg)
 
     def _send_to_recipient_via_api(self, phone, contact_name, body, attachments, test_wizard_id=None, test_phone_to=None):
         """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed
@@ -474,7 +735,8 @@ class WhatsAppMarketingCampaign(models.Model):
         else:
             phone = re.sub(r'\s+', '', raw_phone)
     
-        _logger.info(f"Sending to {phone}")
+        # Security: Don't log phone numbers in production
+        _logger.debug(f"[Campaign] Sending message to recipient")
         try:
             # Convert HTML body to plain text
             if body:
@@ -498,7 +760,8 @@ class WhatsAppMarketingCampaign(models.Model):
             api_url = "http://localhost:4000"
             # backend_url = self.env['whatsapp.connection'].get_backend_api_url()
             api_url = api_url + "/api/message"
-            print(f"API URL: {api_url}")
+            # Security: Don't log API URL which might contain sensitive information
+            _logger.debug(f"[Campaign] Sending message via API")
             has_attachments = bool(attachments)
             
             # Determine message type and file type handling based on backend requirements
@@ -553,7 +816,8 @@ class WhatsAppMarketingCampaign(models.Model):
                         message_type = 'document'
                         file_type = 'bin'
             
-            print("messageType",message_type)
+            # Debug: message type logged at debug level
+            _logger.debug(f"[Campaign] Message type: {message_type}")
             # Always use FormData for all message types
             form_data = {
                 'byChatId': 'false',
@@ -606,42 +870,57 @@ class WhatsAppMarketingCampaign(models.Model):
             
             # Handle response - 201 indicates QR code scanning is needed
             if response.status_code == 201:
-                # 201 status means QR code scanning is required
-                # QR code will be received via socket event with type 'qr_code' or 'status' with type 'qr_code'
-                try:
-                    response_data = response.json()
-                    message = response_data.get('message', 'Please scan QR code to connect WhatsApp')
-                except Exception as json_error:
-                    message = 'Please scan QR code to connect WhatsApp'
-                    _logger.warning(f"Could not parse response JSON for QR popup: {json_error}")
+                # Store request in pending - QR will come via socket event
+                pending_requests = json.loads(self.pending_requests or '[]')
                 
-                # QR code will be updated via socket events - create popup with empty QR code initially
-                qr_popup_vals = {
-                    'qr_code_image': '',  # Will be updated via socket event
-                    'qr_code_filename': 'whatsapp_qr_code.png',
-                    'from_number': self.from_connection_id.from_field,
-                    'from_name': self.from_connection_id.name,
-                    'message': message,
-                    'api_key': self.from_connection_id.api_key,
-                    'phone_number': self.from_connection_id.from_field,
-                    'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
-                    'countdown_seconds': 120,
-                    'is_expired': False,
+                # Store files as base64-encoded strings for JSON serialization
+                files_data = []
+                if files:
+                    for f in files:
+                        filename = f[0]
+                        file_obj = f[1]
+                        if hasattr(file_obj, 'read'):
+                            file_bytes = file_obj.read()
+                            if hasattr(file_obj, 'seek'):
+                                file_obj.seek(0)
+                        else:
+                            file_bytes = file_obj if isinstance(file_obj, bytes) else b''
+                        # Encode to base64 for JSON storage
+                        file_b64 = base64.b64encode(file_bytes).decode('utf-8') if file_bytes else ''
+                        files_data.append((filename, file_b64))
+                
+                # Store request data for retry
+                request_data = {
+                    'type': 'sendMessage',
+                    'data': {
+                        'api_url': api_url,
+                        'form_data': form_data,
+                        'files': files_data,  # List of (filename, base64_string) tuples
+                        'headers': headers,
+                        'phone': phone,
+                        'contact_name': contact_name,
+                        'body': plain_text,
+                        'attachments': [att.id for att in attachments] if attachments else [],
+                        'test_wizard_id': test_wizard_id,
+                        'test_phone_to': test_phone_to,
+                    },
+                    'timestamp': fields.Datetime.now().isoformat(),
                 }
-                # Set appropriate original ID based on context
+                
+                pending_requests.append(request_data)
+                self.write({'pending_requests': json.dumps(pending_requests)})
+                
+                _logger.info(f"[Campaign {self.name}] Request stored in pending (status 201). Waiting for socket event.")
+                
+                # For test messages, still return qr_popup_needed flag for UI feedback
+                # But QR popup will be created from socket event
                 if test_wizard_id:
-                    qr_popup_vals['original_test_wizard_id'] = test_wizard_id
-                    qr_popup_vals['test_phone_to'] = test_phone_to or phone
-                    qr_popup_vals['test_campaign_id'] = self.id
+                    return {
+                        'qr_popup_needed': True,
+                        'pending': True,
+                    }
                 else:
-                    qr_popup_vals['original_campaign_id'] = self.id
-                
-                qr_popup = self.env['whatsapp.qr.popup'].create(qr_popup_vals)
-                
-                return {
-                    'qr_popup_needed': True,
-                    'qr_popup_id': qr_popup.id,
-                }
+                    return {'pending': True}
             
             # Handle 200 status (success)
             elif response.status_code == 200:
@@ -674,116 +953,7 @@ class WhatsAppMarketingCampaign(models.Model):
             _logger.exception(f"Error sending to {contact_name}: {e}")
             return {'success': False, 'error': str(e)}
 
-    def action_close_qr_popup(self, popup=False):
-        """Resume campaign after QR authentication - send first message, then queue rest for cron"""
-        self.ensure_one()
-        
-        # After QR scan, we need to send the first message again (it wasn't sent before)
-        recipients = json.loads(self.pending_recipients or '[]')
-        
-        if not recipients:
-            # No recipients to send
-            self.write({'state': 'sent'})
-            return {}
-        
-        # Send first message now that WhatsApp is authenticated
-        first_recipient = recipients[0]
-        _logger.info(f"[Campaign {self.name}] Sending first message after QR scan to {first_recipient['phone']}")
-        
-        first_result = self._send_to_recipient_via_api(
-            first_recipient['phone'],
-            first_recipient['name'],
-            self.body,
-            self.attachment_ids
-        )
-        
-        if first_result.get('qr_popup_needed'):
-            # QR needed again (shouldn't happen, but handle it)
-            _logger.warning(f"[Campaign {self.name}] QR needed again after scan")
-            self.write({'waiting_for_qr': True})  # Set flag to prevent cron processing
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'WhatsApp Authentication Required',
-                'res_model': 'whatsapp.qr.popup',
-                'res_id': first_result.get('qr_popup_id'),
-                'view_mode': 'form',
-                'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                'target': 'new',
-            }
-        
-        if first_result.get('success'):
-            # First message sent successfully, queue remaining for cron
-            remaining_recipients = recipients[1:] if len(recipients) > 1 else []
-            first_delay = random.uniform(60.0, 120.0)
-            
-            if remaining_recipients:
-                self.write({
-                    'state': 'sending',
-                    'pending_recipients': json.dumps(remaining_recipients),
-                    'sent_count': 1,  # First message now sent
-                    'last_send_time': fields.Datetime.now(),
-                    'next_send_delay': first_delay,
-                    'waiting_for_qr': False,  # Clear flag - ready for cron
-                })
-                message = _('First message sent successfully. Remaining %d messages will be sent in the background.') % len(remaining_recipients)
-                notif_type = 'info'
-            else:
-                # Only one recipient, already sent
-                self.write({
-                    'state': 'sent',
-                    'sent_count': 1,
-                    'pending_recipients': False,
-                    'waiting_for_qr': False,  # Clear flag
-                })
-                message = _('Campaign sent successfully.')
-                notif_type = 'success'
-        else:
-            # First message failed after QR scan
-            self.failed_count = 1
-            self.write({
-                'state': 'draft',
-                'pending_recipients': False,
-                'waiting_for_qr': False,  # Clear flag
-            })
-            error_msg = first_result.get('error', 'Unknown error')
-            _logger.error(f"[Campaign {self.name}] Failed to send first message after QR scan: {error_msg}")
-            message = _('Failed to send first message after QR scan: %s') % error_msg
-            notif_type = 'danger'
-        
-        popup_id = popup.id if popup else (
-            self.env['whatsapp.qr.popup'].search([
-                ('original_campaign_id', '=', self.id)
-            ], limit=1).id or 0
-        )
-        
-        # Send bus message
-        payload = {
-            'action': 'close',
-            'popup_id': popup_id,
-            'title': _('WhatsApp Campaign'),
-            'message': message,
-            'type': notif_type,
-            'sticky': False,
-            'success': self.sent_count > 0
-        }
-        
-        dbname = self._cr.dbname
-        popup_channel = f"{dbname}_qr_popup_{popup_id}"
-        self.env['bus.bus']._sendone(
-            popup_channel,
-            'qr_popup_close',
-            payload
-        )
-        
-        current_user = self.env.user
-        if current_user and current_user.partner_id:
-            self.env['bus.bus']._sendone(
-                current_user.partner_id,
-                'qr_popup_close',
-                payload
-            )
-        
-        return {}
+   
 
     def _get_origin(self):
         """Get origin from request headers"""
@@ -851,97 +1021,183 @@ class WhatsAppMarketingCampaign(models.Model):
         return socket_confirmed
 
     @api.model
-    def cron_send_campaign_messages(self):
-        """Cron job to send campaign messages with random delays (60-120 seconds)
+    def handle_status_socket_event(self, status_data, connection_id=None):
+        """Handle status socket events (qr_code, ready, etc.) for all campaigns
         
-        This method processes one message per campaign per cron run.
-        Runs every minute to send messages with random delays between 60-120 seconds.
+        Args:
+            status_data: Dict with status event data from socket
+            connection_id: ID of connection (optional filter)
+        
+        Returns:
+            dict: Action to open QR popup if QR event, True if ready event, False otherwise
         """
-        campaigns = self.search([
-            ('state', '=', 'sending'),
-            ('pending_recipients', '!=', False),
-            ('waiting_for_qr', '=', False),  # Skip campaigns waiting for QR scan
-        ])
+        if not isinstance(status_data, dict):
+            _logger.warning(f"[Campaign] Invalid status_data format: {type(status_data)}")
+            return False
         
-        for campaign in campaigns:
-            try:
-                # Parse pending recipients
-                recipients = json.loads(campaign.pending_recipients or '[]')
-                if not recipients:
-                    # No more recipients, mark as sent
-                    campaign.write({'state': 'sent'})
-                    _logger.info(f"[Campaign {campaign.name}] Completed: {campaign.sent_count} sent, {campaign.failed_count} failed")
-                    continue
-                
-                # Check if we need to wait (random delay between 60-120 seconds)
-                if campaign.last_send_time:
-                    time_since_last = (fields.Datetime.now() - campaign.last_send_time).total_seconds()
-                    # Get the delay that was set for this campaign
-                    next_delay = campaign.next_send_delay or random.uniform(60.0, 120.0)
-                    
-                    if time_since_last < next_delay:
-                        # Not enough time has passed, skip this campaign for now
-                        _logger.debug(f"[Campaign {campaign.name}] Waiting {next_delay - time_since_last:.1f}s more before next message")
-                        continue
-                else:
-                    # First message - use the delay that was set when campaign was queued
-                    next_delay = campaign.next_send_delay or random.uniform(60.0, 120.0)
-                
-                # Get next recipient
-                recipient = recipients[0]
-                
-                _logger.info(f"[Campaign {campaign.name}] Sending to {recipient['phone']} ({recipient['name']})")
-                
-                # Send message
-                result = campaign._send_to_recipient_via_api(
-                    recipient['phone'],
-                    recipient['name'],
-                    campaign.body,
-                    campaign.attachment_ids
-                )
-                
-                # Handle QR popup if needed
-                if result.get('qr_popup_needed'):
-                    # Pause campaign - user needs to scan QR
-                    _logger.warning(f"[Campaign {campaign.name}] QR code needed, pausing campaign. User must scan QR code first.")
-                    campaign.write({'waiting_for_qr': True})  # Set flag so cron skips this campaign
-                    continue
-                
-                # Update counts
-                if result.get('success'):
-                    campaign.sent_count += 1
-                    _logger.info(f"[Campaign {campaign.name}] Successfully sent to {recipient['phone']}")
-                else:
-                    campaign.failed_count += 1
-                    error_msg = result.get('error', 'Unknown error')
-                    _logger.error(f"[Campaign {campaign.name}] Failed to send to {recipient['phone']}: {error_msg}")
-                
-                # Remove sent recipient from queue
-                recipients.pop(0)
-                
-                # Generate delay for NEXT message (60-120 seconds)
-                next_delay = random.uniform(60.0, 120.0)
-                
-                # Update campaign state
-                campaign.write({
-                    'pending_recipients': json.dumps(recipients) if recipients else False,
-                    'current_recipient_index': campaign.current_recipient_index + 1,
-                    'last_send_time': fields.Datetime.now(),
-                    'next_send_delay': next_delay,  # Store delay for next message
-                })
-                
-                _logger.info(f"[Campaign {campaign.name}] Progress: {campaign.sent_count} sent, {campaign.failed_count} failed, {len(recipients)} remaining. Next message in {next_delay:.1f}s")
-                
-                # If no more recipients, mark as sent
-                if not recipients:
-                    campaign.write({'state': 'sent'})
-                    _logger.info(f"[Campaign {campaign.name}] Completed: {campaign.sent_count} sent, {campaign.failed_count} failed")
-                    
-            except Exception as e:
-                _logger.exception(f"[Campaign {campaign.name}] Error in cron: {e}")
-                # Continue with next campaign
-                continue
+        event_type = status_data.get('type') or status_data.get('status')
+        
+        if event_type == 'ready':
+            return self._handle_ready_status_event(connection_id)
+        
+        return False
 
+   
+    @api.model
+    def _handle_ready_status_event(self, connection_id=None):
+        """Handle ready status event - retry all pending requests for ready connections.
+        
+        Only retries campaigns whose connection (from_connection_id) is ready.
+        Uses database locking (FOR UPDATE SKIP LOCKED) to prevent SerializationFailure
+        when multiple ready events are processed concurrently.
+        
+        Args:
+            connection_id: ID of connection (optional filter). If None, finds all ready connections.
+        
+        Returns:
+            bool: True if any requests were retried
+        """
+        try:
+            # Step 1: Find all connections that are ready
+            if connection_id:
+                ready_connection_ids = [connection_id]
+                _logger.info(f"[Ready Event] Using provided connection_id: {connection_id}")
+            else:
+                ready_connections = self.env['whatsapp.connection'].search([
+                    ('socket_connection_ready', '=', True)
+                ])
+                if not ready_connections:
+                    _logger.info("[Ready Event] No ready connections found, skipping campaign retry")
+                    return False
+                ready_connection_ids = ready_connections.ids
+                _logger.info(f"[Ready Event] Found {len(ready_connection_ids)} ready connection(s): {ready_connection_ids}")
+            
+            # Step 2: Find campaigns with pending requests for ready connections
+            # Use raw SQL with FOR UPDATE SKIP LOCKED to prevent concurrent updates
+            self.env.cr.execute("""
+                SELECT id, from_connection_id
+                FROM whatsapp_marketing_campaign
+                WHERE pending_requests IS NOT NULL
+                  AND pending_requests != '[]'
+                  AND pending_requests != ''
+                  AND from_connection_id IN %s
+                FOR UPDATE SKIP LOCKED
+            """, (tuple(ready_connection_ids),))
+            
+            locked_rows = self.env.cr.fetchall()
+            locked_campaign_ids = [row[0] for row in locked_rows]
+            
+            if not locked_campaign_ids:
+                _logger.info("[Ready Event] No campaigns with pending requests found for ready connections")
+                return False
+            
+            _logger.info(f"[Ready Event] Locked {len(locked_campaign_ids)} campaign(s) for retry: {locked_campaign_ids}")
+            
+            # Step 3: Process only the locked campaigns
+            campaigns = self.browse(locked_campaign_ids)
+            retried_count = 0
+            processed_count = 0
+            
+            for campaign in campaigns:
+                try:
+                    pending_requests = json.loads(campaign.pending_requests or '[]')
+                    if not pending_requests:
+                        _logger.debug(f"[Ready Event] Campaign {campaign.name} (ID: {campaign.id}) has no pending requests, skipping")
+                        continue
+                    
+                    _logger.info(f"[Ready Event] Campaign {campaign.name} (ID: {campaign.id}, Connection: {campaign.from_connection_id.id if campaign.from_connection_id else 'None'}): Retrying {len(pending_requests)} pending requests")
+                    
+                    # Retry each pending request
+                    successful = 0
+                    failed = 0
+                    still_pending = []
+                    
+                    for idx, request in enumerate(pending_requests, 1):
+                        request_type = request.get('type')
+                        data = request.get('data', {})
+                        
+                        if request_type == 'sendMarketing':
+                            result = campaign._send_via_marketing_api(
+                                body=data.get('body', ''),
+                                tos=data.get('tos', []),
+                                message_type=data.get('message_type', 'chat')
+                            )
+                            
+                            if result.get('success'):
+                                successful += 1
+                                _logger.info(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} retried successfully")
+                            elif result.get('pending'):
+                                still_pending.append(request)
+                                _logger.info(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} still pending (201)")
+                            else:
+                                failed += 1
+                                _logger.warning(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} failed: {result.get('error')}")
+                        
+                        elif request_type == 'sendMessage':
+                            # Retry single message send
+                            try:
+                                # Reconstruct files from base64
+                                files_data = data.get('files', [])
+                                files = []
+                                if files_data:
+                                    for file_tuple in files_data:
+                                        if isinstance(file_tuple, (list, tuple)) and len(file_tuple) >= 2:
+                                            filename = file_tuple[0]
+                                            file_data = file_tuple[1]
+                                            # Decode from base64 if it's a string
+                                            if isinstance(file_data, str):
+                                                try:
+                                                    file_bytes = base64.b64decode(file_data)
+                                                    files.append((filename, io.BytesIO(file_bytes)))
+                                                except Exception as e:
+                                                    _logger.warning(f"[Ready Event] Campaign {campaign.name}: Error decoding file {filename}: {e}")
+                                                    continue
+                                            elif isinstance(file_data, bytes):
+                                                files.append((filename, io.BytesIO(file_data)))
+                                            else:
+                                                files.append((filename, file_data))
+                                
+                                response = requests.post(
+                                    data.get('api_url'),
+                                    data=data.get('form_data', {}),
+                                    files=files if files else [],
+                                    headers=data.get('headers', {}),
+                                    timeout=120
+                                )
+                                
+                                if response.status_code == 201:
+                                    still_pending.append(request)
+                                    _logger.info(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} still pending (201)")
+                                elif response.status_code == 200:
+                                    successful += 1
+                                    _logger.info(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} retried successfully")
+                                else:
+                                    failed += 1
+                                    _logger.warning(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} failed: status {response.status_code}")
+                            except Exception as e:
+                                failed += 1
+                                _logger.exception(f"[Ready Event] Campaign {campaign.name}: Error retrying message request {idx}/{len(pending_requests)}: {e}")
+                    
+                    # Update pending requests (keep only those that are still pending)
+                    campaign.write({
+                        'pending_requests': json.dumps(still_pending),
+                    })
+                    
+                    retried_count += len(pending_requests)
+                    processed_count += 1
+                    _logger.info(f"[Ready Event] Campaign {campaign.name}: Retried {len(pending_requests)} requests - {successful} success, {failed} failed, {len(still_pending)} still pending")
+                    
+                except Exception as e:
+                    _logger.exception(f"[Ready Event] Error retrying pending requests for campaign {campaign.name} (ID: {campaign.id}): {e}")
+            
+            _logger.info(f"[Ready Event] Successfully processed {processed_count}/{len(locked_campaign_ids)} campaign(s), retried {retried_count} total requests")
+            return retried_count > 0
+            
+        except Exception as e:
+            _logger.exception(f"[Ready Event] Error handling ready status event: {e}")
+            return False
+
+   
 
 class WhatsAppMarketingCampaignTest(models.TransientModel):
     _name = 'whatsapp.marketing.campaign.test'
@@ -999,16 +1255,6 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
             test_phone_to=self.phone_to.strip()
         )
         
-        if result.get('qr_popup_needed'):
-            return {
-                'type': 'ir.actions.act_window',
-                'name': 'WhatsApp Authentication Required',
-                'res_model': 'whatsapp.qr.popup',
-                'res_id': result.get('qr_popup_id'),
-                'view_mode': 'form',
-                'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-                'target': 'new',
-            }
         
         if result.get('success'):
             return {

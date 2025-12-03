@@ -271,11 +271,11 @@
                 font-size: 11px;
             }
 
-            .status-dot {
+            <!-- .status-dot {
                 width: 8px;
                 height: 8px;
                 border-radius: 50%;
-            }
+            } -->
 
             .no-connections {
                 text-align: center;
@@ -761,7 +761,7 @@
                 gap: 8px;
             }
 
-            .chat-actions .btn {
+            .chat-actions .wa-btn {
                 color: #667781;
             }
 
@@ -828,13 +828,39 @@
 
             .message-bubble {
                 background: white;
-                padding: 8px 12px;
+                padding: 4px 8px;
                 border-radius: 12px;
                 position: relative;
                 word-wrap: break-word;
                 overflow-wrap: break-word;  /* Add this */
                 word-break: break-all;       /* Add this for long strings without spaces */
                 max-width: 100%;  
+            }
+
+            /* On smaller screens, let messages occupy up to 70% of the container width */
+            @media (max-width: 768px) {
+                .message {
+                    max-width: 70%;
+                }
+                /* Make media and vcard blocks span the full bubble width on mobile */
+                .message-media,
+                .message-location {
+                    width: 100%;
+                    max-width: 100%;
+                }
+                .message[class*="location"]{
+                    width: 100%;
+                    min-width: 0;
+                }
+            }
+
+            /* Desktop: constrain vcard width inside bubbles */
+            @media (min-width: 769px) {
+                .vcard-container,
+                .vcard-item {
+                    width: 280px;
+                    max-width: 280px;
+                }
             }
 
             .message-outbound .message-bubble {
@@ -1142,7 +1168,6 @@
                 gap: 4px;
                 font-size: 11px;
                 color: #667781;
-                margin-top: 4px;
             }
 
             .edited-badge {
@@ -1178,6 +1203,7 @@
                 padding: 2px 6px;
                 font-size: 12px;
                 line-height: 1.2;
+                z-index: 10;
             }
             
             .reaction-emoji {
@@ -1415,7 +1441,9 @@
 
             /* Message Media Display */
             .message-media {
-                margin-bottom: 8px;
+                width: 320px;        
+                max-width: 100%;     
+                margin: 0;
             }
 
             .message-image {
@@ -1436,20 +1464,76 @@
             .message-document {
                 display: flex;
                 align-items: center;
-                gap: 8px;
-                padding: 8px;
-                background: rgba(0,0,0,0.05);
-                border-radius: 4px;
+                gap: 10px;
+                padding: 6px 10px;
+                background: rgba(0,0,0,0.03);
+                border-radius: 8px;
+                border: 1px solid rgba(0,0,0,0.06);
+            }
+            
+            .message-document-icon {
+                width: 32px;
+                height: 32px;
+                border-radius: 8px;
+                background: rgba(102, 120, 129, 0.1);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                flex-shrink: 0;
             }
 
-            .message-document i {
-                font-size: 24px;
+            .message-document-icon i {
+                font-size: 18px;
                 color: #667781;
+            }
+            
+            .message-document-meta {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                flex: 1;
+                min-width: 0;
+            }
+            
+            .message-document-name {
+                font-size: 13px;
+                font-weight: 500;
+                color: #111b21;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            .message-document-size {
+                font-size: 11px;
+                color: #667781;
+            }
+            
+            .message-document-download {
+                flex-shrink: 0;
+                color: #25d366;
+                text-decoration: none;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                transition: background 0.15s ease, transform 0.1s ease;
+            }
+            
+            .message-document-download:hover {
+                background: rgba(37, 211, 102, 0.08);
+                transform: scale(1.05);
+            }
+            
+            .message-document-download i {
+                font-size: 14px;
             }
 
             .message-audio {
-                width: 100%;
-                margin: 8px 0;
+                height: 40px;
+                background: transparent;
             }
 
             .message-content {
@@ -1464,6 +1548,13 @@
                 padding: 0;
                 background: #f5f5f5;
                 border-radius: 8px;
+            }
+
+            .message-image,
+            .message-video,
+            .message-document,
+            .message-audio {
+                width: 100%;         
             }
             .location-map {
                 margin: 0;
@@ -1527,12 +1618,265 @@
                 margin-left: auto;
                 display: flex;
                 align-items: center;
+                flex-shrink: 0;
             }
             
             .contacts-popup-actions {
                 display: flex;
                 align-items: center;
                 gap: 8px;
+            }
+            
+            .contact-button {
+                background: #25d366;
+                color: white;
+                border: none;
+                border-radius: 20px;
+                padding: 8px 16px;
+                font-size: 13px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                white-space: nowrap;
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+            }
+            
+            .contact-button:hover {
+                background: #128c7e;
+                transform: translateY(-1px);
+                box-shadow: 0 2px 8px rgba(37, 211, 102, 0.3);
+            }
+            
+            .contact-button:active {
+                transform: translateY(0);
+            }
+            
+            .close-popup-btn {
+                color: #667781;
+                transition: color 0.2s ease;
+                padding: 4px;
+                border-radius: 50%;
+                width: 28px;
+                height: 28px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .close-popup-btn:hover {
+                color: #111b21;
+                background-color: rgba(0, 0, 0, 0.05);
+            }
+            
+            /* Custom scrollbar for contacts popup */
+            .contacts-popup-list::-webkit-scrollbar {
+                width: 6px;
+            }
+            
+            .contacts-popup-list::-webkit-scrollbar-track {
+                background: #f5f5f5;
+                border-radius: 3px;
+            }
+            
+            .contacts-popup-list::-webkit-scrollbar-thumb {
+                background: #ccc;
+                border-radius: 3px;
+            }
+            
+            .contacts-popup-list::-webkit-scrollbar-thumb:hover {
+                background: #aaa;
+            }
+            
+            /* Contacts Popup - Base Styles */
+            .contacts-popup {
+                position: absolute;
+                width: 320px;
+                max-width: calc(100vw - 32px);
+                max-height: 400px;
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+                display: flex;
+                flex-direction: column;
+                z-index: 1002;
+                animation: slideUpFade 0.2s ease;
+            }
+            
+            /* When opened from sidebar header - position below button */
+            .contacts-popup.from-sidebar {
+                top: calc(100% + 8px);
+                left: 0;
+            }
+            
+            /* When opened from attachment menu - position above plus icon (same as attachment-options) */
+            .contacts-popup.from-attachment {
+                position: absolute;
+                bottom: 60px;
+                left: 0;
+                right: auto;
+                top: auto;
+                visibility: visible;
+            }
+            
+            /* Wrapper for attachment toggle button and popup */
+            .attachment-toggle-wrapper {
+                position: relative;
+            }
+            
+            .contacts-popup-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 16px;
+                border-bottom: 1px solid #e9edef;
+                background: #f8f9fa;
+                border-radius: 12px 12px 0 0;
+            }
+            
+            .contacts-popup-header h4 {
+                margin: 0;
+                font-size: 16px;
+                font-weight: 600;
+                color: #111b21;
+            }
+            
+            .contacts-popup-search {
+                display: flex;
+                align-items: center;
+                padding: 12px 16px;
+                border-bottom: 1px solid #e9edef;
+                background: white;
+            }
+            
+            
+            .contacts-popup-search input {
+                flex: 1;
+                border: none;
+                outline: none;
+                font-size: 14px;
+                padding: 8px 12px;
+                background: #f0f2f5;
+                border-radius: 20px;
+                color: #111b21;
+                transition: background 0.2s ease;
+            }
+            
+            .contacts-popup-search input:focus {
+                background: #e9edef;
+            }
+            
+            .contacts-popup-search input::placeholder {
+                color: #667781;
+            }
+            
+            .contacts-popup-list {
+                flex: 1;
+                overflow-y: auto;
+                max-height: 300px;
+                background: white;
+            }
+            
+            .contact-item {
+                display: flex;
+                align-items: center;
+                gap: 12px;
+                padding: 12px 16px;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                border-bottom: 1px solid #f0f0f0;
+            }
+            
+            .contact-item:last-child {
+                border-bottom: none;
+            }
+            
+            .contact-item:hover {
+                background-color: #f5f6fa;
+            }
+            
+            .contact-item.contact-item-selected {
+                background-color: #e7f3ff;
+            }
+            
+            .contact-avatar {
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                flex-shrink: 0;
+                overflow: hidden;
+                background: #25d366;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                color: white;
+                font-weight: 600;
+                font-size: 16px;
+            }
+            
+            .contact-avatar img {
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                object-fit: cover;
+            }
+            
+            .contact-info {
+                flex: 1;
+                min-width: 0;
+                overflow: hidden;
+            }
+            
+            .contact-name {
+                font-weight: 500;
+                font-size: 15px;
+                color: #111b21;
+                margin-bottom: 2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            .contact-phone {
+                font-size: 13px;
+                color: #667781;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            
+            .contacts-loading,
+            .contacts-load-more-loader {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                padding: 24px;
+                color: #667781;
+            }
+            
+            .contacts-loading i,
+            .contacts-load-more-loader i {
+                color: #25d366;
+            }
+            
+            .no-contacts {
+                text-align: center;
+                padding: 48px 20px;
+                color: #667781;
+            }
+            
+            .no-contacts i {
+                font-size: 48px;
+                margin-bottom: 12px;
+                color: #25d366;
+                opacity: 0.6;
+            }
+            
+            .no-contacts p {
+                margin: 8px 0 0 0;
+                font-size: 14px;
             }
             
             .contact-preview-item {
@@ -1589,30 +1933,32 @@
                 padding: 0;
             }
             
+            /* VCard cards – mobile-first, fluid width */
             .vcard-container {
                 display: flex;
                 flex-direction: column;
                 gap: 8px;
-                width: 280px;
-                max-width: 280px;
+                width: 100%;
+                max-width: 100%;
+                box-sizing: border-box;
             }
             
             .vcard-item {
                 display: flex;
                 align-items: center;
                 gap: 12px;
-                padding: 12px;
+                padding: 4px;
                 background: rgba(0, 0, 0, 0.03);
                 border-radius: 8px;
                 border: 1px solid rgba(0, 0, 0, 0.1);
-                width: 280px;
-                max-width: 280px;
+                width: 100%;
+                max-width: 100%;
                 box-sizing: border-box;
             }
             
             .vcard-avatar {
-                width: 48px;
-                height: 48px;
+                width: 36px;
+                height: 36px;
                 border-radius: 50%;
                 background: #25d366;
                 display: flex;
@@ -1620,7 +1966,7 @@
                 justify-content: center;
                 color: white;
                 font-weight: 600;
-                font-size: 18px;
+                font-size: 14px;
                 flex-shrink: 0;
             }
             
@@ -1861,55 +2207,60 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
+                overflow: visible;
             }
 
             .attachment-toggle {
-                width: 37px;
-                height: 37px;
-
-                border: 0px solid rgba(37, 211, 102, 0.3);
+                width: 40px;
+                height: 40px;
+                border: none;
                 background: transparent;
-                color: gray;
-                
-                font-size: 20px;
+                color: #54656f;
+                font-size: 24px;
+                font-weight: 300;
                 cursor: pointer;
                 transition: all 0.2s ease;
                 position: relative;
-                overflow: hidden;
-            }
-
-            .attachment-toggle::before {
-                content: '';
-                position: absolute;
-                top: 50%;
-                left: 50%;
-                width: 0;
-                height: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
                 border-radius: 50%;
-                background: rgba(255, 255, 255, 0.2);
-                transform: translate(-50%, -50%);
-                transition: width 0.3s ease, height 0.3s ease;
+                flex-shrink: 0;
             }
 
             .attachment-toggle:hover {
-                background: lightgray;
-                border-radius: 50%;
-
+                background: rgba(0, 0, 0, 0.05);
             }
 
-            .attachment-toggle:hover::before {
-                width: 100%;
-                height: 100%;
+            .attachment-toggle:active {
+                background: rgba(0, 0, 0, 0.1);
             }
 
-            .attachment-toggle i {
-                position: relative;
-                z-index: 1;
-                transition: transform 0.2s ease;
+            /* Close icon (X) styling - same size as plus */
+            .attachment-toggle .close-icon,
+            .attachment-toggle .plus-icon {
+                font-size: 20px;
+                font-weight: 300;
+                color: #54656f;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                line-height: 1;
+                width: 20px;
+                height: 20px;
+                text-align: center;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                letter-spacing: 0;
             }
-
-            .attachment-toggle:hover i {
-                transform: rotate(90deg);
+            
+            /* Make the close icon (✕) render with same visual weight as plus */
+            .attachment-toggle .close-icon {
+                font-weight: 300;
+                transform: scale(1.1);
+            }
+            
+            .attachment-toggle .plus-icon {
+                font-weight: 300;
             }
 
             .attachment-options {
@@ -2033,13 +2384,14 @@
                 align-items: end;
                 gap: 12px;
             }
+            
 
             .input-tools {
                 display: flex;
                 gap: 8px;
             }
 
-            .input-tools .btn {
+            .input-tools .wa-btn {
                 color: #667781;
             }
 
@@ -2047,14 +2399,28 @@
                 flex: 1;
                 border: none;
                 outline: none;
-                padding: 7px 16px;
-                border-radius: 10px;
+                padding: 9px 12px;
+                border-radius: 21px;
                 background: white;
                 resize: none;
-                font-size: 14px;
-                max-height: 80px;
+                font-size: 15px;
+                line-height: 20px;
+                max-height: 100px; /* ~4 rows (20px line-height * 4 + padding) */
                 min-height: 20px;
-                border: 1px solid lightgray;
+                height: auto;
+                overflow-y: auto;
+                border: 1px solid #e9edef;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                transition: height 0.2s ease;
+            }
+
+            .message-input-container textarea:focus {
+                border-color: #25d366;
+                box-shadow: 0 0 0 1px rgba(37, 211, 102, 0.1);
+            }
+
+            .message-input-container textarea::placeholder {
+                color: #667781;
             }
 
             .send-btn {
@@ -2062,22 +2428,43 @@
                 color: white;
                 border: none;
                 border-radius: 50%;
-                width: 48px;
-                height: 48px;
+                width: 40px;
+                height: 40px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
                 cursor: pointer;
                 flex-shrink: 0;
+                padding: 0;
+                transition: all 0.2s ease;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            }
+
+            .send-btn:hover {
+                background: #128c7e;
+                transform: scale(1.05);
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+            }
+
+            .send-btn:active {
+                transform: scale(0.95);
+            }
+
+            .send-btn:disabled {
+                background: #ccc;
+                cursor: not-allowed;
+                transform: none;
+            }
+
+            .send-btn img {
+                width: 20px;
+                height: 20px;
+                object-fit: contain;
             }
 
             .send-btn i {
                 font-size: 18px;
                 color: white;
-            }
-
-            .send-btn:hover {
-                background: #128c7e;
             }
 
             /* Emoji Panel */
@@ -2150,7 +2537,7 @@
             }
 
             /* Utility Classes */
-            .btn {
+            .wa-btn {
                 padding: 8px 16px;
                 border-radius: 50%;
                 border: none;
@@ -2159,24 +2546,34 @@
                 transition: all 0.2s ease;
             }
 
-            .btn-primary {
+            .wa-btn-primary {
                 background: #25d366;
                 color: white;
             }
 
-            .btn-primary:hover {
+            .wa-btn-primary:hover {
                 background: #128c7e;
             }
 
-            .btn-link {
+            .wa-btn-link {
                 background: none;
                 color: #667781;
                 padding: 4px 8px;
                 justify-content: end;
             }
 
-            .btn-link:hover {
+            .wa-btn-link:hover {
                 background: rgba(0,0,0,0.05);
+            }
+
+            .wa-btn-secondary {
+                background: #e4e6eb;
+                color: #050505;
+                border: 1px solid #ccd0d5;
+            }
+
+            .wa-btn-secondary:hover {
+                background: #d8dadf;
             }
 
             .text-success { color: #25d366; }
@@ -2193,7 +2590,7 @@
                         <h3>Select WhatsApp Connection</h3>
                         <p>Choose which WhatsApp Business account to use</p>
                         </div>
-                        <button class="btn btn-link connection-close-btn" t-on-click="() => this.state.showConnectionSelector = false">
+                        <button class="wa-btn wa-btn-link connection-close-btn" t-on-click="() => this.state.showConnectionSelector = false">
                             <i class="fa fa-times"/>
                         </button>
                     </div>
@@ -2240,7 +2637,7 @@
                 <div class="qr-modal-content">
                     <div class="qr-modal-header">
                         <h3>Scan QR to connect</h3>
-                        <button class="btn btn-link qr-close-btn" t-on-click="() => this.closeQRModal()">
+                        <button class="wa-btn wa-btn-link qr-close-btn" t-on-click="() => this.closeQRModal()">
                             <i class="fa fa-times"/>
                         </button>
                     </div>
@@ -2280,7 +2677,7 @@
                
                 <!-- <div class="whatsapp-header">
                     <div class="header-left">
-                        <button t-on-click="showConnectionSelector" class="btn btn-link connection-btn">
+                        <button t-on-click="showConnectionSelector" class="wa-btn wa-btn-link connection-btn">
                             <i class="fa fa-bars"/>
                             <span t-esc="state.selectedConnection ? state.selectedConnection.name : 'Select Connection'"/>
                         </button>
@@ -2305,7 +2702,7 @@
                                     <i class="fa fa-times"/>
                                 </button>
                                 
-                                <button t-on-click="showConnectionSelector" class="btn btn-link connection-btn">
+                                <button t-on-click="showConnectionSelector" class="wa-btn wa-btn-link connection-btn">
                                     <span t-esc="state.selectedConnection ? state.selectedConnection.name : 'Select Connection'"/>
                                     <i class="fa fa-chevron-down"/>
                                 </button>
@@ -2318,24 +2715,22 @@
                                     <!-- <i class="material-icons">people</i> -->
                                 </button>
                                 
-                                <!-- Contacts Popup -->
-                                <div t-if="state.showContactsPopup" class="contacts-popup">
+                                <!-- Contacts Popup - Sidebar Header (positioned below) -->
+                                <div t-if="state.showContactsPopup and !state.contactSharingMode" class="contacts-popup from-sidebar">
                                     <div class="contacts-popup-header">
                                         <h4 t-esc="state.contactSharingMode ? 'Select Contacts to Share' : 'Select Contact'"/>
                                         <div class="contacts-popup-actions">
                                             <button t-if="state.contactSharingMode and state.selectedContactsForSharing.length > 0" 
-                                                    class="btn btn-primary" 
-                                                    t-on-click="shareContacts"
-                                                    style="padding: 6px 12px; font-size: 12px;">
+                                                    class="contact-button" 
+                                                    t-on-click="shareContacts">
                                                 Share (<span t-esc="state.selectedContactsForSharing.length"/>)
                                             </button>
-                                        <button class="btn btn-link close-popup-btn" t-on-click="toggleContactsPopup">
+                                        <button class="wa-btn wa-btn-link close-popup-btn" t-on-click="toggleContactsPopup">
                                             <i class="fa fa-times"/>
                                         </button>
                                         </div>
                                     </div>
                                     <div class="contacts-popup-search">
-                                        <i class="fa fa-search"/>
                                         <input type="text" 
                                                placeholder="Search contacts..." 
                                                t-model="state.contactsSearchTerm"
@@ -2362,8 +2757,8 @@
                                                 <div class="contact-phone" t-esc="contact.phoneNumber"/>
                                             </div>
                                             <div t-if="state.contactSharingMode" class="contact-checkbox">
-                                                <i t-if="isContactSelected(contact.id)" class="fa fa-check-circle" style="color: #25d366; font-size: 20px;"/>
-                                                <i t-if="!isContactSelected(contact.id)" class="fa fa-circle" style="color: #667781; font-size: 20px;"/>
+                                                <i t-if="isContactSelected(contact.id)" class="fa fa-check-circle" style="color: #25d366; font-size: 12px;"/>
+                                                <i t-if="!isContactSelected(contact.id)" class="fa fa-circle" style="color: #667781; font-size: 12px;"/>
                                             </div>
                                         </div>
                                         <!-- Loader at the end when loading more contacts -->
@@ -2381,7 +2776,7 @@
                             <div class="search-box" style="flex: 1;">
                                 <i class="fa fa-search"/>
                                 <input type="text" 
-                                       placeholder="Search or start new chat..." 
+                                       placeholder="Search chat..." 
                                        t-model="state.searchTerm"
                                        t-on-input="(ev) => this.onSearchInput(ev)"/>
                             </div>
@@ -2407,7 +2802,7 @@
                                  t-on-click="() => this.selectConversation(conversation.id)">
                                 <div class="conversation-avatar">
                                     <img t-att-src="conversation.profilePicture or '/whatsapp_chat_module/static/src/img/avatar.png'" alt="Avatar"/>
-                                    <div t-if="conversation.contact_status === 'online'" class="status-indicator online"/>
+                                    <!-- <div t-if="conversation.contact_status === 'online'" class="status-indicator online"/> -->
                                 </div>
                                 <div class="conversation-content">
                                     <div class="conversation-header">
@@ -2425,7 +2820,7 @@
                                     </div> -->
                                     <div class="conversation-preview">
                                         <span class="last-message">
-                                            <span t-if="conversation.latestMessageAck >= 1"
+                                            <span t-if="conversation.latestMessageAck >= 1 and conversation.latestMessageDirection === 'outbound'"
                                                 class="ack-badge"
                                                 t-att-style="'color: ' + getAckColor({ ack: conversation.latestMessageAck, direction: 'outbound' }) + ';'">
                                                 <t t-if="conversation.latestMessageAck >= 3">✓✓</t>
@@ -2447,7 +2842,7 @@
                             
                             <!-- Load More Button -->
                             <div t-if="hasMoreConversations()" class="load-more-container">
-                                <button class="btn btn-link load-more-btn" 
+                                <button class="wa-btn wa-btn-link load-more-btn" 
                                         t-att-disabled="state.pagination.isLoadingMore"
                                         t-on-click="loadMoreConversations">
                                     <t t-if="state.pagination.isLoadingMore">
@@ -2485,7 +2880,7 @@
                                 <div class="chat-contact">
                                     <div class="contact-avatar">
                                         <img t-att-src="state.selectedConversation.profilePicture or '/whatsapp_chat_module/static/src/img/avatar.png'" alt="Avatar"/>
-                                        <div class="status-indicator online"/>
+                                        <!-- <div class="status-indicator online"/> -->
                                     </div>
                                     <div class="contact-info">
                                         <h5 t-esc="state.selectedConversation.name"/>
@@ -2494,7 +2889,7 @@
                                 </div>
                                 
                                 <div class="chat-actions">
-                                    <button class="btn btn-link">
+                                    <button class="wa-btn wa-btn-link">
                                         <i class="fa fa-video"/>
                                     </button>                                   
                                 </div>
@@ -2603,31 +2998,42 @@
                                                 <t t-esc="message.fromMe ? 'You deleted this message' : 'This message was deleted'"/>
                                             </span>
                                         </div>
-                                        <div t-if="message.media_url or message.media or (message.messageType and message.messageType !== 'chat' and message.messageType !== 'text')" class="message-media">
+                                        <div t-if="!message.isDeleted and (message.media_url or message.media or (message.messageType and message.messageType !== 'chat' and message.messageType !== 'text'))" class="message-media">
                                             <img t-if="message.messageType === 'image' or message.type === 'image'" 
-                                                 t-att-src="message.filePath"  
+                                                 t-att-src="message.mediaData"  
                                                  class="message-image"
                                                  t-att-alt="message.content"/>
                                             <video t-if="message.messageType === 'video' or message.type === 'video'" 
-                                                   t-att-src="message.media_url or message.media" 
+                                                   t-att-src="message.media_url or message.media or message.mediaData" 
                                                    controls="controls"
                                                    class="message-video"/>
                                             <div t-if="message.messageType === 'document' or message.type === 'document'" 
                                                  class="message-document">
-                                                <i class="fa fa-file"/>
-                                                <span t-esc="message.fileName or message.content or 'Document'"/>
-                                                <a t-if="message.media_url or message.media" 
-                                                   t-att-href="message.media_url or message.media" 
+                                                <div class="message-document-icon">
+                                                    <i class="fa fa-file-text-o"/>
+                                                </div>
+                                                <div class="message-document-meta">
+                                                    <span class="message-document-name"
+                                                          t-esc="message.fileName or message.content or 'Document'"/>
+                                                    <span t-if="message.fileSize"
+                                                          class="message-document-size"
+                                                          t-esc="formatFileSize(message.fileSize)"/>
+                                                </div>
+                                                <a t-if="message.media_url or message.mediaData" 
+                                                   t-att-href="message.mediaData or message.media_url or message.media" 
+                                                   t-att-download="message.fileName or 'Document'"
                                                    target="_blank"
-                                                   class="download-link">Download</a>
+                                                   class="message-document-download">
+                                                    <i class="fa fa-download"/>
+                                                </a>
                                             </div>
                                             <audio t-if="message.messageType === 'audio' or message.type === 'audio'" 
-                                                   t-att-src="message.media_url or message.media" 
+                                                   t-att-src="message.mediaData or message.media" 
                                                    controls="controls"
                                                    class="message-audio"/>
                                         </div>
                                         <!-- Location Display -->
-                                        <div t-if="message.messageType === 'location' or message.type === 'location' or (message.latitude and message.longitude)" class="message-location">
+                                        <div t-if="!message.isDeleted and (message.messageType === 'location' or message.type === 'location' or (message.latitude and message.longitude))" class="message-location">
                                             <div class="location-map">
                                                 <img t-if="message.messageType === 'location' or message.type === 'location'"
                                                      t-att-src="message.media_url or message.media or ('data:image/jpeg;base64,'+(message.body || ''))"
@@ -2674,7 +3080,7 @@
                                         </div> -->
                                         
                                         <!-- VCard/Contact Display -->
-                                        <div t-if="message.messageType === 'vcard' or message.messageType === 'multi_vcard' or message.type === 'vcard' or message.type === 'multi_vcard'" class="message-vcard">
+                                        <div t-if="!message.isDeleted and (message.messageType === 'vcard' or message.messageType === 'multi_vcard' or message.type === 'vcard' or message.type === 'multi_vcard')" class="message-vcard">
                                             <div class="vcard-container">
                                                 <t t-foreach="getParsedVcards(message)" t-as="contact" t-key="contact_index">
                                                     <div class="vcard-item">
@@ -2685,9 +3091,6 @@
                                                         <div class="vcard-info">
                                                             <div class="vcard-name" t-esc="contact.fullName or contact.name or contact.pushname or 'Unknown Contact'"/>
                                                             <div class="vcard-phone" t-esc="contact.phoneNumber or contact.phone or contact.phone_number or ''"/>
-                                                            
-                                                                
-                                                           
                                                         </div>
                                                     </div>
                                                 </t>
@@ -2823,7 +3226,7 @@
                                     <div class="location-picker-content">
                                         <div class="location-picker-header">
                                             <h4>Select Location</h4>
-                                            <button class="btn btn-link close-popup-btn" t-on-click="closeLocationPicker">
+                                            <button class="wa-btn wa-btn-link close-popup-btn" t-on-click="closeLocationPicker">
                                                 <i class="fa fa-times"/>
                                             </button>
                                         </div>
@@ -2832,10 +3235,10 @@
                                                    placeholder="Search for a place..." 
                                                    t-model="state.locationSearchQuery"
                                                    t-on-keypress="(ev) => ev.key === 'Enter' and searchLocationAddress()"/>
-                                            <button class="btn btn-primary" t-on-click="searchLocationAddress">
+                                            <button class="wa-btn wa-btn-primary" t-on-click="searchLocationAddress">
                                                 <i class="fa fa-search"/>
                                             </button>
-                                            <button class="btn btn-secondary" t-on-click="getCurrentLocation" title="Use Current Location">
+                                            <button class="wa-btn wa-btn-secondary" t-on-click="getCurrentLocation" title="Use Current Location">
                                                 <i class="fa fa-crosshairs"/>
                                             </button>
                                         </div>
@@ -2864,8 +3267,8 @@
                                             </div>
                                         </div>
                                         <div class="location-picker-actions">
-                                            <button class="btn btn-secondary" t-on-click="closeLocationPicker">Cancel</button>
-                                            <button class="btn btn-primary" 
+                                            <button class="wa-btn wa-btn-secondary" t-on-click="closeLocationPicker">Cancel</button>
+                                            <button class="wa-btn wa-btn-primary" 
                                                     t-on-click="confirmLocationSelection"
                                                     t-att-disabled="!state.selectedLocation">
                                                 Send Location
@@ -2885,11 +3288,7 @@
                                         </button>
                                                 <button class="attachment-option" t-on-click="() => this.handleAttachmentOption('media')">
                                                     <i class="fa fa-image"/>
-                                                    <span>Photos &amp; videos</span>
-                                                </button>
-                                                <button class="attachment-option" t-on-click="() => this.handleAttachmentOption('camera')">
-                                                    <i class="fa fa-camera"/>
-                                                    <span>Camera</span>
+                                                    <span>Photos</span>
                                                 </button>
                                                 <button class="attachment-option" t-on-click="() => this.handleAttachmentOption('audio')">
                                                     <i class="fa fa-microphone"/>
@@ -2904,10 +3303,67 @@
                                                     <span>Location</span>
                                                 </button> -->
                                             </div>
+                                            <div class="attachment-toggle-wrapper" style="position: relative;">
                                             <button class="attachment-toggle" t-on-click="toggleAttachmentMenu">
-                                                 <t t-if="state.showAttachmentMenu">✕</t>
-                                                 <t t-else="">+</t>
+                                                 <span t-if="state.showAttachmentMenu" class="close-icon">×</span>
+                                                 <span t-else="" class="plus-icon">+</span>
+                                                </button>
+                                                
+                                                <!-- Contacts Popup - Attachment Menu (positioned above plus icon) -->
+                                                <div t-if="state.showContactsPopup and state.contactSharingMode" class="contacts-popup from-attachment">
+                                                <div class="contacts-popup-header">
+                                                    <h4 t-esc="state.contactSharingMode ? 'Select Contacts to Share' : 'Select Contact'"/>
+                                                    <div class="contacts-popup-actions">
+                                                        <button t-if="state.contactSharingMode and state.selectedContactsForSharing.length > 0" 
+                                                                class="contact-button" 
+                                                                t-on-click="shareContacts">
+                                                            Share (<span t-esc="state.selectedContactsForSharing.length"/>)
+                                                        </button>
+                                                        <button class="wa-btn wa-btn-link close-popup-btn" t-on-click="toggleContactsPopup">
+                                                            <i class="fa fa-times"/>
                                             </button>
+                                                    </div>
+                                                </div>
+                                                <div class="contacts-popup-search">
+                                                   
+                                                    <input type="text" 
+                                                           placeholder="Search contacts..." 
+                                                           t-model="state.contactsSearchTerm"
+                                                           t-on-input="(ev) => this.onContactsSearchInput(ev)"/>
+                                                </div>
+                                                <div class="contacts-popup-list" t-on-scroll="onContactsScroll">
+                                                    <div t-if="state.isLoadingContacts and getFilteredContacts().length === 0" class="contacts-loading">
+                                                        <i class="fa fa-spinner fa-spin"/>
+                                                        <span>Loading contacts...</span>
+                                                    </div>
+                                                    <div t-if="!state.isLoadingContacts and getFilteredContacts().length === 0" class="no-contacts">
+                                                        <i class="fa fa-users"/>
+                                                        <p>No contacts found</p>
+                                                    </div>
+                                                    <div t-foreach="getFilteredContacts()" t-as="contact" t-key="contact.id" 
+                                                         class="contact-item"
+                                                         t-att-class="{'contact-item-selected': state.contactSharingMode and isContactSelected(contact.id)}"
+                                                         t-on-click="() => this.openChatWithContact(contact)">
+                                                        <div class="contact-avatar">
+                                                            <img t-att-src="contact.profilePicture or '/whatsapp_chat_module/static/src/img/avatar.png'" alt="Avatar"/>
+                                                        </div>
+                                                        <div class="contact-info">
+                                                            <div class="contact-name" t-esc="contact.name or contact.pushname"/>
+                                                            <div class="contact-phone" t-esc="contact.phoneNumber"/>
+                                                        </div>
+                                                        <div t-if="state.contactSharingMode" class="contact-checkbox">
+                                                            <i t-if="isContactSelected(contact.id)" class="fa fa-check-circle" style="color: #25d366; font-size: 12px;"/>
+                                                            <i t-if="!isContactSelected(contact.id)" class="fa fa-circle" style="color: #667781; font-size: 12px;"/>
+                                                        </div>
+                                                    </div>
+                                                    <!-- Loader at the end when loading more contacts -->
+                                                    <div t-if="state.isLoadingContacts and getFilteredContacts().length > 0" class="contacts-load-more-loader">
+                                                        <i class="fa fa-spinner fa-spin"/>
+                                                        <span>Loading more contacts...</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            </div>
                                         </div>
                                         <input type="file" 
                                                ref="fileInput" 
@@ -2916,15 +3372,17 @@
                                                t-att-accept="getAttachmentAccept()"
                                                t-on-change="(ev) => this.handleFileSelect(ev)"/>
                                     </div>
-                                    <textarea placeholder="Type a message..."
+                                    <textarea ref="messageTextarea"
+                                              placeholder="Type a message..."
                                               t-model="state.messageInput"
                                               t-on-keypress="event => this.handleKeyPress(event)"
+                                              t-on-input="event => this.handleTextareaInput(event)"
                                               rows="1"/>
-                                    <button t-if="state.editingMessageId" class="btn btn-link" t-on-click="saveEdit" title="Save">✓</button>
-                                    <button t-if="state.editingMessageId" class="btn btn-link" t-on-click="cancelEdit" title="Cancel">✕</button>
-                                    <button t-if="!state.editingMessageId" class="btn btn-primary send-btn" t-on-click="sendMessage" t-att-disabled="state.mediaUploading">
+                                    <button t-if="state.editingMessageId" class="wa-btn wa-btn-link" t-on-click="saveEdit" title="Save">✓</button>
+                                    <button t-if="state.editingMessageId" class="wa-btn wa-btn-link" t-on-click="cancelEdit" title="Cancel">✕</button>
+                                    <button t-if="!state.editingMessageId" class="wa-btn wa-btn-primary send-btn" t-on-click="sendMessage" t-att-disabled="state.mediaUploading">
                                         <i t-if="state.mediaUploading" class="fa fa-spinner fa-spin"/>
-                                        <i t-if="!state.mediaUploading" class="fa fa-paper-plane"/>
+                                        <img t-if="!state.mediaUploading" src="/whatsapp_chat_module/static/src/img/send.png" alt="Send"/>
                                     </button>
                                 </div>
                             </div>

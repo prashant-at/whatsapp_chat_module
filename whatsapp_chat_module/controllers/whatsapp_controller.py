@@ -5,6 +5,7 @@ from odoo.http import request
 import requests
 import json
 import logging
+import re
 from datetime import timedelta
 
 _logger = logging.getLogger(__name__)
@@ -29,11 +30,22 @@ class WhatsAppController(http.Controller):
         if message_direction and message_direction != 'inbound':
             return {'error': 'Leads can only be created from inbound messages.'}
 
-        contact_name = (payload.get('contact_name') or '').strip()
-        contact_phone = (payload.get('contact_phone') or '').strip()
-        message_content = (payload.get('message_content') or '').strip()
+        # Input validation and sanitization
+        contact_name = (payload.get('contact_name') or '').strip()[:128]  # Limit length
+        contact_phone = (payload.get('contact_phone') or '').strip()[:20]  # Limit length
+        
+        # Validate phone number format (E.164 format: +[country code][number])
+        if contact_phone and not re.match(r'^\+?[1-9]\d{1,14}$', contact_phone):
+            _logger.warning(f"Invalid phone number format received: {contact_phone[:10]}...")
+            # Don't reject, but log warning - phone might be in different format
+        
+        message_content = (payload.get('message_content') or '').strip()[:5000]  # Limit length
         message_id = payload.get('message_id')
+        if message_id and not isinstance(message_id, (str, int)):
+            message_id = str(message_id)[:100]  # Sanitize message_id
         conversation_id = payload.get('conversation_id')
+        if conversation_id and not isinstance(conversation_id, (str, int)):
+            conversation_id = str(conversation_id)[:100]  # Sanitize conversation_id
         timestamp = payload.get('timestamp')
 
         # Fallback values

@@ -109,11 +109,11 @@
                         
                         <!-- Hidden fields for JavaScript -->
                         <div class="d-none">
-                            <field name="qr_expires_at" readonly="1"/>
-                            <field name="countdown_seconds" readonly="1"/>
-                            <field name="is_expired" readonly="1"/>
-                            <field name="api_key" readonly="1"/>
-                            <field name="phone_number" readonly="1"/>
+                            <!-- <field name="qr_expires_at" readonly="1"/> -->
+                            <!-- <field name="countdown_seconds" readonly="1"/> -->
+                            <!-- <field name="is_expired" readonly="1"/> -->
+                            <!-- <field name="api_key" readonly="1"/>
+                            <field name="phone_number" readonly="1"/> -->
                         </div>
                     </div>
                     

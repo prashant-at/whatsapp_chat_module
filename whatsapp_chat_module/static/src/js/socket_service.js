@@ -21,17 +21,16 @@ export class SocketService {
         this.clientOrigin = null; // Client origin/IP for authentication
         // Local subscribers registry so UI can react to events without DOM hacks
         this._subscribers = new Map(); // eventName -> Set<handler>
+        
+        // Event debouncing to prevent duplicate processing
+        this._lastReadyTime = null; // Track last ready event
+        this._readyDebounceMs = 5000; // 5 second cooldown for ready events
     }
     
     setAuthCredentials(apiKey, phoneNumber, origin = '127.0.0.1') {
-        console.log("[WA][Socket] setAuthCredentials called:");
-        
         this.apiKey = apiKey;
         this.phoneNumber = phoneNumber;
-        // Store origin - default to 127.0.0.1 for now, can be made dynamic
         this.clientOrigin = origin || window.location.origin;
-        
-        
     }
 
     hasMatchingCredentials(apiKey, phoneNumber, origin) {
@@ -108,7 +107,6 @@ export class SocketService {
             // Import Socket.IO client dynamically
             if (!this._io) {
                 const mod = await import('https://cdn.socket.io/4.7.2/socket.io.esm.min.js');
-                console.log("mod", mod);
                 this._io = mod.default;
             }
             
@@ -188,19 +186,8 @@ export class SocketService {
             this._emitLocal('connect_error', error);
         });
 
-        // Listen for any error or message events from server
-        this.socket.onAny((eventName, ...args) => {
-            console.log(`🔔 [Socket Event] Received event '${eventName}':`);
-        });
-
         // WhatsApp specific events - Backend wraps all events in { data: ... }
         this.socket.on('qr_code', ({ data }) => {
-           
-            console.log("qr_code data", data);
-            // Update UI instantly via DOM
-            // this.updateQrPopupUI(data);
-            
-            // Also inform backend via RPC
             this.sendRPC('qr_code', data);
             this._emitLocal('qr_code', data);
         });
@@ -216,29 +203,37 @@ export class SocketService {
         });
 
         this.socket.on('status', (payload) => {
-            console.log(payload,"status data")
-            if(payload.type === "qr_code" || payload.type === "qr_code_mismatch"){
-                this.updateQrPopupUI(payload);
+            console.log("status event",payload)
+            // if(payload.type === "qr_code" || payload.type === "qr_code_mismatch"){
+            //     this.updateQrPopupUI(payload);
+            // }
+            
+            // Debounce 'ready' events - backend sends 3 identical events, only process the first
+            if (payload.type === 'ready') {
+                const now = Date.now();
+                if (this._lastReadyTime && (now - this._lastReadyTime) < this._readyDebounceMs) {
+                    this._emitLocal('status', payload); // Still emit locally for UI updates
+                    return; // Skip RPC call to prevent duplicate backend processing
+                }
+                this._lastReadyTime = now;
             }
+            
             this.sendRPC('status', payload);
             this._emitLocal('status', payload);
         });
 
-        this.socket.on('message', ( payload ) => {
+        this.socket.on('message', (payload) => {
             console.log("message event",payload)
-            // const messageData = payload?.data;
-            // this.sendRPC('message', data);
             this._emitLocal('message', payload);
         });
 
-        this.socket.on('chat', ( data ) => {
+        this.socket.on('chat', (data) => {
             console.log("chat event",data)
-            // this.sendRPC('chat', data);
             this._emitLocal('chat', data);
         });
-        this.socket.on("contact", ( data ) => {
+        
+        this.socket.on('contact', (data) => {
             console.log("contact event",data)
-            // this.sendRPC('contact', data);
             this._emitLocal('contact', data);
         });
     }
@@ -275,82 +270,71 @@ export class SocketService {
         setTimeout(() => this.connect(this.userId), this.reconnectDelay);
     }
 
-    /**
-     * Helper method to update QR popup UI directly via DOM manipulation
-     * This provides instant visual updates without requiring popup re-opening
-     * @param {string|object} data - QR code data (string or object with qrCode property)
-     * @param {number} retryCount - Internal retry counter (default: 0)
-     */
-    updateQrPopupUI(payload, retryCount = 0) {
-        let data = payload?.data;
-        console.log("data",data)
-        let qrCode = null;
-        if (typeof data === 'string') {
-            // If data is a string, treat it as the QR code directly
-            qrCode = data;
-        } else if (data && typeof data === 'object') {
-            // If data is an object, extract properties
-            qrCode = data.qrCode || data.qr_code || data.qrCodeImage || null;
-        }
+    // /**
+    //  * Helper method to update QR popup UI directly via DOM manipulation
+    //  * This provides instant visual updates without requiring popup re-opening
+    //  * @param {string|object} data - QR code data (string or object with qrCode property)
+    //  * @param {number} retryCount - Internal retry counter (default: 0)
+    //  */
+    // updateQrPopupUI(payload, retryCount = 0) {
+    //     let data = payload?.data;
+    //     let qrCode = null;
+    //     if (typeof data === 'string') {
+    //         // If data is a string, treat it as the QR code directly
+    //         qrCode = data;
+    //     } else if (data && typeof data === 'object') {
+    //         // If data is an object, extract properties
+    //         qrCode = data.qrCode || data.qr_code || data.qrCodeImage || null;
+    //     }
         
-        // 1️⃣ Update QR image directly - try multiple selectors for compatibility
-        const qrImg = document.querySelector('.o_field_widget[name="qr_code_image_bin"] img') || 
-                      document.querySelector('.qr-image img') ||
-                      document.querySelector('[name="qr_code_image_bin"] img');
+    //     // 1️⃣ Update QR image directly - try multiple selectors for compatibility
+    //     const qrImg = document.querySelector('.o_field_widget[name="qr_code_image_bin"] img') || 
+    //                   document.querySelector('.qr-image img') ||
+    //                   document.querySelector('[name="qr_code_image_bin"] img');
         
-        if (qrImg && qrCode) {
-            const qrSrc = qrCode.startsWith('data:image')
-                ? qrCode
-                : `data:image/png;base64,${qrCode}`;
+    //     if (qrImg && qrCode) {
+    //         const qrSrc = qrCode.startsWith('data:image')
+    //             ? qrCode
+    //             : `data:image/png;base64,${qrCode}`;
 
-            // Optional fade animation
-            qrImg.style.opacity = '0.5';
-            setTimeout(() => {
-                qrImg.src = qrSrc;
-                qrImg.style.opacity = '1';
-            }, 100);
-            console.log('[QR Popup]  Updated QR image');
-        } else if (!qrImg) {
-            // Retry mechanism: if element not found and we haven't exceeded max retries
-            const maxRetries = 5;
-            const retryDelay = 60; // Start with 200ms delay
+    //         // Optional fade animation
+    //         qrImg.style.opacity = '0.5';
+    //         setTimeout(() => {
+    //             qrImg.src = qrSrc;
+    //             qrImg.style.opacity = '1';
+    //         }, 100);
+    //     } else if (!qrImg) {
+    //         // Retry mechanism: if element not found and we haven't exceeded max retries
+    //         const maxRetries = 5;
+    //         const retryDelay = 60;
             
-            if (retryCount < maxRetries) {
-                console.log(`[QR Popup]  QR image element not found (attempt ${retryCount + 1}/${maxRetries}), retrying in ${retryDelay}ms...`);
-                setTimeout(() => {
-                    this.updateQrPopupUI(payload, retryCount + 1);
-                }, retryDelay);
-                return; // Exit early, will retry
-            } else {
-                console.warn('[QR Popup]  QR image element not found after max retries - popup may not be open');
-            }
-        } else if (qrImg && !qrCode) {
-            console.warn('[QR Popup]  QR image found but no qrCode in data');
-        }
+    //         if (retryCount < maxRetries) {
+    //             setTimeout(() => {
+    //                 this.updateQrPopupUI(payload, retryCount + 1);
+    //             }, retryDelay);
+    //             return;
+    //         }
+    //     }
 
-        // 2️⃣ Update status message text
-        const msgElem = document.querySelector('.o_field_widget[name="message"]') ||
-                        document.querySelector('field[name="message"]');
-        if (msgElem && payload.message) {
-            msgElem.textContent = payload.message;
-            console.log('[QR Popup]  Updated QR message');
-        }
+    //     // Update status message text
+    //     const msgElem = document.querySelector('.o_field_widget[name="message"]') ||
+    //                     document.querySelector('field[name="message"]');
+    //     if (msgElem && payload.message) {
+    //         msgElem.textContent = payload.message;
+    //     }
 
-
-        // 5️⃣ Update QR data field if exists (for form state)
-        const qrDataField = document.querySelector('.o_field_widget[name="qr_code_image"]') ||
-                           document.querySelector('field[name="qr_code_image"]');
-        if (qrDataField && qrCode) {
-            const input = qrDataField.querySelector('input');
-            if (input) {
-                input.value = qrCode;
-            }
-            console.log('[QR Popup] ✅Updated QR data field');
-        }
-    }
+    //     // Update QR data field if exists (for form state)
+    //     const qrDataField = document.querySelector('.o_field_widget[name="qr_code_image"]') ||
+    //                        document.querySelector('field[name="qr_code_image"]');
+    //     if (qrDataField && qrCode) {
+    //         const input = qrDataField.querySelector('input');
+    //         if (input) {
+    //             input.value = qrCode;
+    //         }
+    //     }
+    // }
 
     sendRPC(type, data) {
-        console.log(`[Socket Event] ${type} received:`, data);
         fetch('/web/dataset/call_kw', {
             method: 'POST',
             headers: {
@@ -364,7 +348,14 @@ export class SocketService {
                         model: 'whatsapp.qr.popup',
                         method: 'do_something',
                         args: [
-                            'rpc', {type,data}
+                            'rpc', {
+                                type,
+                                data: {
+                                    ...data,
+                                    phoneNumber: this.phoneNumber,
+                                    apiKey : this.apiKey,
+                                }
+                            }
                         ],
                         kwargs: {}
                     }
@@ -379,23 +370,58 @@ export class SocketService {
         })
         .then((payload) => {
             if (payload.error) {
-                console.error(`[Socket Event] RPC error response:`, payload.error);
+                console.error(`[Socket Event] RPC error:`, payload.error);
                 return;
             }
             
             const result = payload && payload.result;
             if (!result) {
-                console.warn('[Socket Event]  RPC returned no result:');
                 return;
             }
-
+            
             // Execute server-returned actions: act_window (refresh popup) or display_notification
-            const actionService = window.odoo?.env?.services?.action || window.odoo?.__env__?.services?.action;
+            // Priority 1: Use env from service registration
+            let actionService = this._env?.services?.action;
+            
+            // Priority 2: Try to get action service from current window
+            if (!actionService) {
+                actionService = window.odoo?.env?.services?.action || window.odoo?.__env__?.services?.action;
+            }
+            
+            // Fallback: try parent/top window (compose wizard may be rendered in a sub-frame)
+            if (!actionService && window.top && window.top !== window) {
+                try {
+                    const topOdoo = window.top.odoo;
+                    if (topOdoo) {
+                        actionService = topOdoo.env?.services?.action || topOdoo.__env__?.services?.action;
+                    }
+                } catch (e) {
+                    console.warn('[Socket Event] Unable to access top window for actionService:', e);
+                }
+            }
+            
+            // Fallback: try legacy debug services if env-based action service is not available
+            if (!actionService && window.odoo && window.odoo.__DEBUG__ && window.odoo.__DEBUG__.services) {
+                const debugServices = window.odoo.__DEBUG__.services;
+                // Prefer explicit 'action' service if present
+                if (debugServices.action && typeof debugServices.action.doAction === 'function') {
+                    actionService = debugServices.action;
+                } else {
+                    // Otherwise, search any service exposing doAction
+                    for (const [name, svc] of Object.entries(debugServices)) {
+                        if (svc && typeof svc.doAction === 'function') {
+                            actionService = svc;
+                            break;
+                        }
+                    }
+                }
+            }
+            
             if (actionService && (result.type === 'ir.actions.act_window' || result.tag === 'display_notification')) {
                 actionService.doAction(result);
                 return;
             }
-
+            
             // Backward path: explicit phone_mismatch refresh event
             if (type === 'phone_mismatch' && result.res_model === 'whatsapp.qr.popup' && result.res_id) {
                 window.dispatchEvent(new CustomEvent('whatsapp_qr_refresh', { detail: { popup_id: result.res_id } }));

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from odoo import api, fields, models
 import logging
+import re
 
 _logger = logging.getLogger(__name__)
 
@@ -60,7 +61,17 @@ class WhatsAppMailingSubscription(models.Model):
                 """)
                 pk_constraint = self.env.cr.fetchone()
                 if pk_constraint:
-                    self.env.cr.execute(f"ALTER TABLE whatsapp_mailing_subscription DROP CONSTRAINT {pk_constraint[0]}")
+                    constraint_name = pk_constraint[0]
+                    # Validate constraint name to prevent SQL injection
+                    # Constraint names should only contain alphanumeric characters and underscores
+                    if not re.match(r'^[a-zA-Z0-9_]+$', constraint_name):
+                        _logger.error(f"Invalid constraint name format: {constraint_name}")
+                        raise ValueError(f"Invalid constraint name format: {constraint_name}")
+                    # Use parameterized query for safety
+                    self.env.cr.execute(
+                        "ALTER TABLE whatsapp_mailing_subscription DROP CONSTRAINT %s",
+                        (constraint_name,)
+                    )
                 
                 # Add id column
                 self.env.cr.execute("ALTER TABLE whatsapp_mailing_subscription ADD COLUMN id SERIAL")

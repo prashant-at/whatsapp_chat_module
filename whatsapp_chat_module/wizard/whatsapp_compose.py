@@ -6,6 +6,7 @@ import re
 import base64
 import io
 import logging
+import requests
 from datetime import timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
@@ -46,7 +47,12 @@ class WhatsappCompose(models.TransientModel):
     qr_code_image = fields.Binary('QR Code', readonly=True)
     qr_code_filename = fields.Char('QR Code Filename', readonly=True)
     qr_popup_id = fields.Many2one('whatsapp.qr.popup', string='QR Popup', readonly=True)
-    qr_update_count = fields.Integer('QR Updates Received', default=0, readonly=True)
+    # qr_update_count = fields.Integer('QR Updates Received', default=0, readonly=True)
+    pending_requests = fields.Text(
+        'Pending Requests',
+        default='[]',
+        help="JSON array of API requests that failed due to connection issues (status 201). Will be retried when connection is ready."
+    )
     
     # def do_something(self, data):
     #     """Handle RPC calls from frontend socket service"""
@@ -442,6 +448,19 @@ class WhatsappCompose(models.TransientModel):
         # STEP 2: Send messages (socket should be ready for QR events)
         result = self._send_messages_via_socket(origin)
         
+        # Check if request is pending (status 201) - waiting for socket event
+        if result.get('pending'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Request Queued'),
+                    'message': result.get('message', 'Request queued. Waiting for connection to be ready. QR code will appear if authentication is needed.'),
+                    'type': 'info',
+                    'sticky': False,
+                }
+            }
+        
         # Check if QR popup is needed
         if result.get('qr_popup_needed'):
             qr_popup_id = result.get('qr_popup_id')
@@ -466,7 +485,7 @@ class WhatsappCompose(models.TransientModel):
             self._log_in_chatter([partner.name for partner in self.partner_ids], [])
         
         # Show appropriate notification based on results
-        if result['success_count'] > 0 and result['error_count'] == 0:
+        if result.get('success_count', 0) > 0 and result.get('error_count', 0) == 0:
             # All messages sent successfully - send bus message to show notification and close dialog
             dbname = self._cr.dbname
             current_user = self.env.user
@@ -493,7 +512,7 @@ class WhatsappCompose(models.TransientModel):
             
             # Bus handles notification and closing
             return {}
-        elif result['success_count'] > 0 and result['error_count'] > 0:
+        elif result.get('success_count', 0) > 0 and result.get('error_count', 0) > 0:
             # Some messages sent, some failed
             notification = {
                 'type': 'ir.actions.client',
@@ -552,7 +571,7 @@ class WhatsappCompose(models.TransientModel):
                     # Send to WhatsApp API
                     # api_url = "http://localhost:3000/api/whatsapp/send"
                     api_url = self.env['whatsapp.connection'].get_backend_api_url() + "/api/message"
-                    print(f"API URL: {api_url}")
+                   
                     # Normalize recipient phone: keep one space after country code, remove others
                     
                     raw_phone = (partner.mobile or '')
@@ -565,7 +584,7 @@ class WhatsappCompose(models.TransientModel):
                     else:
                         normalized_to = re.sub(r'\s+', '', raw_phone)
                     
-                    print('messageType',message_type)
+                    
                     form_data = {
                         'byChatId': 'false',
                         'to': normalized_to,
@@ -574,6 +593,7 @@ class WhatsappCompose(models.TransientModel):
                     }
 
                     files = []
+                    file_bytes_map = {}  # Store original bytes: field_name -> bytes
                     if has_attachments:
                         for attachment in self.attachment_ids:
                             file_data = b''
@@ -612,70 +632,88 @@ class WhatsappCompose(models.TransientModel):
 
                             # Add file if we have actual data
                             if file_data and len(file_data) > 0:
+                                field_name = f'files[{len(files)}]'
+                                # Store original bytes BEFORE creating BytesIO (for pending_requests storage)
+                                file_bytes_map[field_name] = file_data
+                                file_io = io.BytesIO(file_data)
+                                file_io.seek(0)
                                 files.append((
-                                    f'files[{len(files)}]',
-                                    (filename, io.BytesIO(file_data), mimetype)
+                                    field_name,
+                                    (filename, file_io, mimetype)
                                 ))
                     
-                    # Always send with FormData - files will be empty list [] if no attachments
+                    # Send request with FormData
                     response = requests.post(
                         api_url,
                         data=form_data,
-                        files=files if files else [],  # Empty list [] if no attachments
+                        files=files if files else [],
                         headers=headers,
                         timeout=120
                     )
                    
-                    print("send response",response)
-                    # Handle 201 status - QR code will come via socket event, not in response
+                    # Handle 201 status - store in pending requests, wait for socket event
                     if response.status_code == 201:
-                        # 201 status means QR code scanning is required
-                        # QR code will be received via socket event with type 'qr_code' or 'status' with type 'qr_code'
-                        try:
-                            response_data = response.json()
-                            message = response_data.get('message', 'Please scan QR code to connect WhatsApp')
-                        except Exception as json_error:
-                            message = 'Please scan QR code to connect WhatsApp'
-                            _logger.warning(f"Could not parse response JSON for QR popup: {json_error}")
+                        # Store request in pending - QR will come via socket event
+                        pending_requests = json.loads(self.pending_requests or '[]')
                         
-                        # Store context for later chatter logging
-                        active_model = self.model or self.env.context.get('active_model')
-                        active_id = self.env.context.get('active_id')
+                        # Store all request data for retry
+                        # Files are stored as base64-encoded strings for JSON serialization
+                        files_data = []
+                        if files:
+                            for f in files:
+                                field_name = f[0]
+                                file_tuple = f[1]
+                                
+                                if isinstance(file_tuple, tuple) and len(file_tuple) >= 3:
+                                    original_filename = file_tuple[0]
+                                    mimetype = file_tuple[2]
+                                    
+                                    # Use stored bytes from file_bytes_map (BytesIO is consumed by requests.post)
+                                    file_bytes = file_bytes_map.get(field_name, b'')
+                                    
+                                    # Fallback: try to read from BytesIO if map is empty
+                                    if not file_bytes:
+                                        file_io = file_tuple[1]
+                                        if hasattr(file_io, 'getvalue'):
+                                            file_bytes = file_io.getvalue()
+                                        elif hasattr(file_io, 'read'):
+                                            current_pos = file_io.tell() if hasattr(file_io, 'tell') else 0
+                                            file_io.seek(0)
+                                            file_bytes = file_io.read()
+                                            file_io.seek(current_pos)
+                                    
+                                    # Encode to base64 for JSON storage
+                                    file_b64 = base64.b64encode(file_bytes).decode('utf-8') if file_bytes else ''
+                                    # Store: (field_name, filename, base64_data, mimetype)
+                                    files_data.append((field_name, original_filename, file_b64, mimetype))
+                                else:
+                                    _logger.warning(f"[Compose Wizard] Unexpected file tuple format: {f}")
+                                    continue
                         
-                        # Create QR popup - QR code will be updated via socket events
-                        # The popup will listen for socket events and update itself automatically
-                        qr_popup = self.env['whatsapp.qr.popup'].create({
-                            'qr_code_image': '',  # Will be updated via socket event
-                            'qr_code_filename': 'whatsapp_qr_code.png',
-                            'from_number': self.from_number.from_field,
-                            'from_name': self.from_number.name,
-                            'original_wizard_id': self.id,
-                            'message': message,
-                            'api_key': self.from_number.api_key,
-                            'phone_number': self.from_number.from_field,
-                            'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),  # 2 minutes
-                            'countdown_seconds': 120,
-                            'is_expired': False,
-                            'retry_count': 0,
-                            'last_qr_string': '',
-                            # Store context for chatter logging
-                            'original_context': json.dumps(self.env.context),
-                            'active_model': active_model or '',
-                            'active_id': active_id or 0,
-                        })
-                        self.qr_popup_id = qr_popup.id
-                        self.write({'qr_popup_id': qr_popup.id})
+                        request_data = {
+                            'type': 'sendMessage',
+                            'data': {
+                                'api_url': api_url,
+                                'form_data': {k: v for k, v in form_data.items()},
+                                'files': files_data,  # List of (filename, base64_string) tuples
+                                'headers': headers,
+                                'recipient_phone': normalized_to,
+                                'recipient_name': partner.name,
+                                'message': plain_text,
+                                'active_model': self.model or self.env.context.get('active_model'),
+                                'active_id': self.env.context.get('active_id'),
+                            },
+                            'timestamp': fields.Datetime.now().isoformat(),
+                        }
                         
-                        # Return early when QR is needed. After QR authentication,
-                        # action_close_qr_popup() will call _send_messages_via_socket() again,
-                        # processing ALL recipients from the beginning.
-                        # The QR code will be received and displayed via socket events
+                        pending_requests.append(request_data)
+                        self.write({'pending_requests': json.dumps(pending_requests)})
+                        
+                        _logger.info(f"[Compose Wizard] Request stored in pending (status 201). Waiting for socket event.")
+                        
                         return {
-                            'qr_popup_needed': True,
-                            'qr_popup_id': qr_popup.id,
-                            'success_count': 0,
-                            'error_count': 0,
-                            'error_messages': [],
+                            'pending': True,
+                            'message': 'Request queued. Waiting for connection to be ready. QR code will appear if authentication is needed.',
                         }
                     
                     # Handle 200 status (success)
@@ -741,126 +779,306 @@ class WhatsappCompose(models.TransientModel):
             _logger.exception(f"Error in WhatsApp API integration: {e}")
             raise UserError(_("Failed to send messages via WhatsApp API: %s") % str(e))
     
-    def action_close_qr_popup(self, popup=False):
+    def _log_in_chatter(self, success_messages, error_messages, active_model=None, active_id=None):
+        """Log WhatsApp messages in document chatter without sending emails
+        
+        Args:
+            success_messages: List of successful recipient names (unused but kept for compatibility)
+            error_messages: List of error messages (unused but kept for compatibility)
+            active_model: Optional model name to override wizard's model
+            active_id: Optional record ID to override wizard's context
+        """
+        # Use provided document context or fallback to wizard's context
+        doc_model = active_model or self.model or self.env.context.get('active_model')
+        doc_id = active_id or self.env.context.get('active_id')
+        
+        if not doc_model or not doc_id:
+            return
+        
+        record = self.env[doc_model].browse(doc_id)
+        if not record.exists():
+            return
+        
+        # Prepare message content for chatter
+        message_content = self.body if self.body else 'No message content'
+        
+        # Create dynamic subject
+        if hasattr(record, 'name'):
+            record_name = record.name or ''
+            if record._name == 'sale.order':
+                email_subject = f"Sales Order - {record_name}"
+            elif record._name == 'purchase.order':
+                email_subject = f"Purchase Order - {record_name}"
+            elif record._name == 'account.move':
+                email_subject = f"Invoice - {record_name}"
+            else:
+                email_subject = f"Message - {record_name}"
+        else:
+            email_subject = "WhatsApp Message"
+        
+        # Prepare attachment information for logging
+        attachment_ids_for_log = []
+        if self.attachment_ids:
+            for attachment in self.attachment_ids:
+                # Use custom filename for chatter logging
+                custom_filename = attachment.name.replace('/', '_')
+                # Copy attachment to be linked with the log message
+                log_attachment = attachment.copy({
+                    'res_model': doc_model,
+                    'res_id': doc_id,
+                    'name': f"WhatsApp Chat - {custom_filename}"
+                })
+                attachment_ids_for_log.append(log_attachment.id)
+        
+        # Convert HTML to plain text for safe chatter logging
+        safe_body = html2text.html2text(message_content)
+
+        record.message_post(
+            body=safe_body,
+            subject=email_subject,
+            attachment_ids=attachment_ids_for_log,
+            message_type='comment',
+            subtype_xmlid='whatsapp_chat_module.mail_subtype_whatsapp_message',
+        )
+
+    def action_retry_pending_requests(self):
+        """Retry all pending requests for this wizard when connection is ready.
+        
+        Uses database locking (FOR UPDATE NOWAIT) to prevent concurrent retries
+        on the same wizard, which could cause SerializationFailure errors.
+        
+        Returns:
+            dict: Odoo action dict for notification
+        """
         self.ensure_one()
-
-        result = self._send_messages_via_socket()
-
-        # Log in chatter
-        if result.get('success_count', 0) > 0:
-            qr_popup = popup or self.env['whatsapp.qr.popup'].search([
-                ('original_wizard_id', '=', self.id)
-            ], order='create_date desc', limit=1)
-
-            if qr_popup and qr_popup.original_context:
-                try:
-                    ctx = json.loads(qr_popup.original_context)
-                    ctx.update({
-                        'active_model': qr_popup.active_model,
-                        'active_id': qr_popup.active_id,
-                    })
-                    self.with_context(**ctx)._log_in_chatter(
-                        [p.name for p in self.partner_ids], []
+        
+        # Step 1: Lock this record to prevent concurrent retries
+        try:
+            self.env.cr.execute("""
+                SELECT id 
+                FROM whatsapp_chat_simple_wizard
+                WHERE id = %s
+                FOR UPDATE NOWAIT
+            """, (self.id,))
+            
+            if not self.env.cr.fetchone():
+                # Record is locked by another process
+                _logger.warning(f"[Compose Wizard] Record {self.id} is locked by another process, skipping retry")
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': _('Retry Skipped'),
+                        'message': _('Another process is already retrying pending requests.'),
+                        'type': 'warning',
+                    }
+                }
+        except Exception as e:
+            # Lock failed - another process has it
+            _logger.warning(f"[Compose Wizard] Could not lock wizard {self.id} (likely locked by another process): {e}")
+            
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Retry Skipped'),
+                    'message': _('Another process is already retrying pending requests.'),
+                    'type': 'warning',
+                }
+            }
+        
+        # Step 2: Refresh record to get latest pending_requests
+        self.invalidate_recordset(['pending_requests'])
+        pending_requests = json.loads(self.pending_requests or '[]')
+        
+        if not pending_requests:
+            _logger.info(f"[Compose Wizard] Wizard {self.id} has no pending requests to retry")
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('No Pending Requests'),
+                    'message': _('There are no pending requests to retry.'),
+                    'type': 'info',
+                }
+            }
+        
+        connection_info = f"Connection: {self.from_number.id if self.from_number else 'None'}"
+        _logger.info(f"[Compose Wizard] Wizard {self.id} ({connection_info}): Retrying {len(pending_requests)} pending requests")
+        
+        successful = 0
+        failed = 0
+        still_pending = []
+        
+        for idx, request in enumerate(pending_requests, 1):
+            try:
+                if request.get('type') == 'sendMessage':
+                    data = request.get('data', {})
+                    
+                    # Reconstruct request
+                    api_url = data.get('api_url')
+                    form_data = data.get('form_data', {})
+                    files_data = data.get('files', [])
+                    headers = data.get('headers', {})
+                    
+                    # Reconstruct files - convert stored tuples back to format expected by requests
+                    files = []
+                    if files_data:
+                        import io
+                        for file_tuple in files_data:
+                            if isinstance(file_tuple, (list, tuple)) and len(file_tuple) >= 4:
+                                # New format: (field_name, filename, base64_data, mimetype)
+                                field_name = file_tuple[0]      # e.g., 'files[0]'
+                                filename = file_tuple[1]         # e.g., 'invoice.pdf'
+                                file_data = file_tuple[2]        # base64 string
+                                mimetype = file_tuple[3]         # e.g., 'application/pdf'
+                                
+                                # Decode from base64
+                                if isinstance(file_data, str):
+                                    try:
+                                        file_bytes = base64.b64decode(file_data)
+                                        file_io = io.BytesIO(file_bytes)
+                                        file_io.seek(0)
+                                        files.append((
+                                            field_name,
+                                            (filename, file_io, mimetype)
+                                        ))
+                                    except Exception as e:
+                                        _logger.error(f"[Compose Wizard] Error decoding file {filename}: {e}")
+                                        continue
+                            elif isinstance(file_tuple, (list, tuple)) and len(file_tuple) >= 2:
+                                # Backward compatibility: old format (field_name, base64_data) without mimetype
+                                field_name = file_tuple[0]
+                                file_data = file_tuple[1]
+                                
+                                if isinstance(file_data, str):
+                                    try:
+                                        file_bytes = base64.b64decode(file_data)
+                                        # Extract filename from field_name and use generic mimetype
+                                        filename = field_name.replace('files[', '').replace(']', '') or 'attachment'
+                                        mimetype = 'application/octet-stream'
+                                        # Create BytesIO and ensure position is at start
+                                        file_io = io.BytesIO(file_bytes)
+                                        file_io.seek(0)
+                                        files.append((
+                                            field_name,
+                                            (filename, file_io, mimetype)
+                                        ))
+                                    except Exception as e:
+                                        _logger.error(f"[Compose Wizard] Error decoding file {field_name}: {e}")
+                                        continue
+                                elif isinstance(file_data, bytes):
+                                    filename = field_name.replace('files[', '').replace(']', '') or 'attachment'
+                                    mimetype = 'application/octet-stream'
+                                    files.append((
+                                        field_name,
+                                        (filename, io.BytesIO(file_data), mimetype)
+                                    ))
+                                else:
+                                    files.append((field_name, file_data))
+                    
+                    # Retry the request
+                    response = requests.post(
+                        api_url,
+                        data=form_data,
+                        files=files if files else [],
+                        headers=headers,
+                        timeout=120
                     )
-                except Exception as e:
-                    self._log_in_chatter([p.name for p in self.partner_ids], [])
-            else:
-                self._log_in_chatter([p.name for p in self.partner_ids], [])
-
-        # Build message
-        if result['success_count'] > 0:
-            message = result['error_count'] > 0 \
-                and _("%d sent, %d failed: %s") % (result['success_count'], result['error_count'], ', '.join(result['error_messages'])) \
-                or _("Successfully sent %d messages!") % result['success_count']
-            notif_type = "warning" if result['error_count'] > 0 else "success"
-        else:
-            message = _("Failed: %s") % ', '.join(result['error_messages'])
-            notif_type = "danger"
-
-        popup_id = popup.id if popup else (
-            self.env['whatsapp.qr.popup'].search([
-                ('original_wizard_id', '=', self.id)
-            ], limit=1).id or 0
-        )
-
-        # Odoo 17+ requires string channels, not tuples
-        payload = {
-            'action': 'close',
-            'popup_id': popup_id,
-            'title': _('WhatsApp'),
-            'message': message,
-            'type': notif_type,
-            'sticky': False,
-            'success': result['success_count'] > 0
-        }
+                    
+                    if response.status_code == 201:
+                        # Still pending - keep in list
+                        still_pending.append(request)
+                        _logger.info(f"[Compose Wizard] Wizard {self.id}: Request {idx}/{len(pending_requests)} still pending (201)")
+                    elif response.status_code == 200:
+                        successful += 1
+                        _logger.info(f"[Compose Wizard] Wizard {self.id}: Request {idx}/{len(pending_requests)} retried successfully")
+                    else:
+                        failed += 1
+                        _logger.warning(f"[Compose Wizard] Wizard {self.id}: Request {idx}/{len(pending_requests)} failed: status {response.status_code}")
+                        
+            except Exception as e:
+                _logger.exception(f"[Compose Wizard] Wizard {self.id}: Error retrying pending request {idx}/{len(pending_requests)}: {e}")
+                failed += 1
         
-        dbname = self._cr.dbname
+        # Step 3: Update pending requests
+        self.write({'pending_requests': json.dumps(still_pending)})
         
-        # Send to specific popup channel (string format for Odoo 17+)
-        popup_channel = f"{dbname}_qr_popup_{popup_id}"
-        self.env['bus.bus']._sendone(
-            popup_channel,
-            'qr_popup_close',
-            payload
-        )
-        current_user = self.env.user
-        if current_user and current_user.partner_id:
-            self.env['bus.bus']._sendone(
-                current_user.partner_id,
-                'qr_popup_close',
-                payload
+        _logger.info(f"[Compose Wizard] Wizard {self.id}: Retried {len(pending_requests)} requests - {successful} success, {failed} failed, {len(still_pending)} still pending")
+        
+        # Step 4: Extract document context from pending_requests for chatter logging
+        # All pending requests should have the same document context (stored when created)
+        doc_model = None
+        doc_id = None
+        if pending_requests:
+            first_request = pending_requests[0]
+            if isinstance(first_request, dict) and 'data' in first_request:
+                doc_model = first_request['data'].get('active_model')
+                doc_id = first_request['data'].get('active_id')
+        
+        # Fallback to wizard's current context if not in pending_requests
+        if not doc_model:
+            doc_model = self.model or self.env.context.get('active_model')
+        if not doc_id:
+            doc_id = self.env.context.get('active_id')
+        
+        # Step 5: Log to chatter and handle UI updates (same as first-time send)
+        # Log messages in chatter ONLY if messages were actually sent successfully
+        if successful > 0:
+            self._log_in_chatter(
+                [partner.name for partner in self.partner_ids],
+                [],
+                active_model=doc_model,
+                active_id=doc_id
             )
-        else:
-            _logger.warning(f"No partner_id found for user {current_user.login if current_user else 'Unknown'}")
-        return {}
-
-
-    def _log_in_chatter(self, success_messages, error_messages):
-        """Log WhatsApp messages in document chatter without sending emails"""
-        active_model = self.model or self.env.context.get('active_model')
-        active_id = self.env.context.get('active_id')
         
-        if active_model and active_id:
-            record = self.env[active_model].browse(active_id)
+        # Step 6: Show appropriate notification based on results (same logic as action_send_whatsapp)
+        if successful > 0 and failed == 0 and len(still_pending) == 0:
+            # All pending requests retried successfully - send bus message to show notification and close dialog
+            current_user = self.env.user
+            message = _("Successfully sent %d messages!") % successful
             
-            # Prepare message content for chatter
-            message_content = self.body if self.body else 'No message content'
+            payload = {
+                'action': 'close_compose_wizard',
+                'wizard_id': self.id,
+                'title': _('WhatsApp Messages Sent Successfully'),
+                'message': message,
+                'type': 'success',
+                'sticky': False,
+                'success': True
+            }
             
-            # Create dynamic subject
-            if record and hasattr(record, 'name'):
-                record_name = record.name if hasattr(record, 'name') else ''
-                if record._name == 'sale.order':
-                    email_subject = f"Sales Order - {record_name}"
-                elif record._name == 'purchase.order':
-                    email_subject = f"Purchase Order - {record_name}"
-                elif record._name == 'account.move':
-                    email_subject = f"Invoice - {record_name}"
-                else:
-                    email_subject = f"Message - {record_name}"
-            else:
-                email_subject = "WhatsApp Message"
+            # Send to user's partner channel (always subscribed)
+            if current_user and current_user.partner_id:
+                self.env['bus.bus']._sendone(
+                    current_user.partner_id,
+                    'whatsapp_compose_close',
+                    payload
+                )
             
-            # Prepare attachment information for logging
-            attachment_ids_for_log = []
-            if self.attachment_ids:
-                for attachment in self.attachment_ids:
-                    # Use custom filename for chatter logging
-                    custom_filename = attachment.name.replace('/', '_')
-                    # Copy attachment to be linked with the log message
-                    log_attachment = attachment.copy({
-                        'res_model': active_model,
-                        'res_id': active_id,
-                        'name': f"WhatsApp Chat - {custom_filename}"
-                    })
-                    attachment_ids_for_log.append(log_attachment.id)
-            
-            # Convert HTML to plain text for safe chatter logging
-            safe_body = html2text.html2text(message_content)
-
-            record.message_post(
-                body=safe_body,
-                subject=email_subject,
-                attachment_ids=attachment_ids_for_log,
-                message_type='comment',
-                subtype_xmlid='whatsapp_chat_module.mail_subtype_whatsapp_message',
-            )
+            # Bus handles notification and closing
+            return {}
+        elif successful > 0 and (failed > 0 or len(still_pending) > 0):
+            # Some messages sent, some failed or still pending
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('WhatsApp Messages Partially Sent'),
+                    'message': f"Sent to {successful} recipient(s). {failed} failed, {len(still_pending)} still pending.",
+                    'type': 'warning',
+                    'sticky': True,
+                }
+            }
+        else:
+            # All failed or still pending
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('WhatsApp Messages Failed'),
+                    'message': f"Failed to send messages. {failed} failed, {len(still_pending)} still pending.",
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }

@@ -1,14 +1,74 @@
 {
     'name': "WhatsApp Chat Module",
-    'summary': "WhatsApp chat management with connection, request/response, and chatting screens",
+    'summary': "Complete WhatsApp integration for your business - chat with customers, send marketing campaigns, and manage conversations all from Odoo",
     'description': """
-        WhatsApp Chat Module
-        - Connection screen for API configuration
-        - Request/Response screen for API calls tracking
-        - Chatting screen for active chats management
+WhatsApp Chat Module
+===================
+
+Connect your business with customers through WhatsApp directly from Odoo. Send messages, manage conversations, run marketing campaigns, and stay in touch with your contacts - all in one place.
+
+What You Can Do:
+----------------
+
+* **Chat with Customers**
+    - Send and receive WhatsApp messages instantly
+    - View all your conversations in one place
+    - Share photos, documents, and files
+    - Use emojis to make conversations more engaging
+    - See message history and chat with multiple contacts
+
+* **Send Marketing Campaigns**
+    - Create campaigns to reach many customers at once
+    - Organize contacts into mailing lists
+    - Schedule messages to be sent automatically
+    - Track which messages were sent successfully
+    - Import contacts from spreadsheets easily
+
+* **Use Message Templates**
+    - Save frequently used messages as templates
+    - Personalize messages with customer names and details
+    - Add attachments to templates
+    - Reuse templates for faster messaging
+
+* **Manage Contacts**
+    - Organize WhatsApp contacts into lists
+    - Import contacts from files
+    - Group contacts for targeted campaigns
+    - Keep track of who you've contacted
+
+* **Connect Multiple WhatsApp Accounts**
+    - Set up multiple WhatsApp numbers
+    - Choose which number to use for each message
+    - Control who can use each WhatsApp connection
+    - See connection status at a glance
+
+* **Work with Your Business Data**
+    - Create sales leads from incoming WhatsApp messages
+    - Link messages to your sales orders and invoices
+    - See WhatsApp messages in your document history
+    - Keep all customer communication in one place
+
+* **Stay Secure**
+    - Control who can send messages
+    - Set different access levels for team members
+    - Keep your WhatsApp connections secure
+    - Manage permissions easily
+
+* **Easy Setup**
+    - Connect your WhatsApp by scanning a QR code
+    - Simple setup process
+    - Automatic connection management
+    - Get started in minutes
+
+Perfect for businesses that want to:
+- Communicate with customers on WhatsApp
+- Send promotional messages and updates
+- Provide customer support via chat
+- Keep all customer conversations organized
+- Integrate WhatsApp with their existing business processes
     """,
-    'author': "Anansi Tech",
-    'website': "Anansitech.in",
+    'author': "anansi llp",
+    'website': "anansitech.in",
     'license': 'LGPL-3',
     'category': 'WhatsApp',
     'version': '1.0.0',
@@ -19,10 +79,7 @@
             'security/whatsapp_connection_security.xml',
             'data/mail_subtype_data.xml',
             'data/whatsapp_connection_data.xml',
-            'data/cron_data.xml',
             'views/connection_views.xml',
-            # 'views/request_response_views.xml',
-            # 'views/whatsapp_message_views.xml',
             'views/whatsapp_action.xml',
             'views/whatsapp_template_views.xml',
             'views/whatsapp_marketing_campaign_views.xml',
@@ -33,7 +90,6 @@
             'wizard/whatsapp_compose_views.xml',
             'wizard/whatsapp_qr_popup_views.xml',
             'views/whatsapp_buttons.xml',
-            # 'views/whatsapp_web_template.xml',
             'views/menu_views.xml',
         ],
     "assets": {
@@ -50,4 +106,11 @@
     'installable': True,
     'application': True,
     'auto_install': False,
+    'external_dependencies': {
+        'python': [
+            'requests',
+            'beautifulsoup4',
+            'html2text',
+        ],
+    },
 }

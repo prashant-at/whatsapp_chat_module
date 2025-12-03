@@ -3,12 +3,21 @@
 import { registry } from "@web/core/registry";
 import socketService from "./socket_service";
 
-// Headless startup: no UI component, avoids Owl template errors
+
+// 1️⃣ First, register socketService as a proper Odoo service
+registry.category("services").add("socket_service", {
+    dependencies: [],
+    start(env) {
+        socketService._env = env;  // Give it access to env
+        return socketService;
+    }
+});
+// 2️⃣ Then register the initializer that depends on socket_service
 registry.category("services").add("wa_socket_initializer", {
-    dependencies: ["bus_service"],  // Wait for bus_service to be ready
+    dependencies: ["bus_service", "socket_service"],  // Wait for both services to be ready
     async start(env, { bus_service }) {
         try {
-            const svc = env.services?.socket_service || socketService;
+            const svc = env.services.socket_service;  // Now guaranteed to be available
             
             // Listen for "Connect" button clicks (high priority)
             // bus_service is guaranteed to be available via dependencies

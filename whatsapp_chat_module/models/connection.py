@@ -13,7 +13,7 @@ class WhatsAppConnection(models.Model):
 
     name = fields.Char(string='Connection Name')
     from_field = fields.Char(string='From')
-    api_key = fields.Char(string='API Key')
+    api_key = fields.Char(string='API Key', password=True)
     authorized_person_ids = fields.Many2many('res.users', string='Authorized Persons', required=False,
                                             help="Users authorized to use this connection")
     authorized_person_names = fields.Char(string='Authorized Persons', compute='_compute_authorized_person_names', store=False)
@@ -92,12 +92,6 @@ class WhatsAppConnection(models.Model):
         
         return super().create(vals)
 
-    # def write(self, vals):
-    #     """Handle default connection updates"""
-    #     if vals.get('is_default'):
-    #         # Unset other default connections
-    #         self.search([('is_default', '=', True)]).write({'is_default': False})
-    #     return super().write(vals)
     def write(self, vals):
         """Handle default connection updates + clear invalid user defaults"""
         # Keep old authorized persons (before write)
@@ -253,6 +247,8 @@ class WhatsAppConnection(models.Model):
         if not self.api_key or not self.from_field:
             raise UserError(_("API Key and Phone Number are required for connection."))
         
+       
+        
         # Get origin from request (for socket matching)
         origin = '127.0.0.1'  # Default
         try:
@@ -301,29 +297,28 @@ class WhatsAppConnection(models.Model):
             _logger.warning(f"[Connection] Socket not confirmed within {max_wait}s, proceeding anyway")
         
         # STEP 2: Make REST call (socket should be connected by now)
-        # api_url = "http://localhost:3000/api/whatsapp/qr"
         api_url = self.get_backend_api_url() + "/api/qr-code"
-        print("api url",api_url)
+        
         headers = {
             'x-api-key': self.api_key.strip(),
             'x-phone-number': self.from_field.strip(),
-            'origin': origin,  # Fixed: uncommented and using request origin
+            'origin': origin,
             'Content-Type': 'application/json'
         }
-        print("header",headers)
         
         _logger.info(f"[Connection] Step 2: Making REST call for {self.name}")
-        _logger.info(f"[Connection] API URL: {api_url}")
-        _logger.info(f"[Connection] Phone: {self.from_field}")
-        _logger.info(f"[Connection] Origin: {origin}")
+        # Security: Don't log sensitive information like API keys, phone numbers, or full URLs
+        # _logger.info(f"[Connection] API URL: {api_url}")  # Removed for security
+        # _logger.info(f"[Connection] Phone: {self.from_field}")  # Removed for security
         
         try:
             response = requests.get(api_url, headers=headers)
-            print(response,"response text")
+            
             _logger.info(f"[Connection] API Response Status: {response.status_code}")
             
             result = response.json() if response.content else {}
-            _logger.info(f"[Connection] API Response: {result}")
+            # Security: Don't log full response which might contain sensitive data
+            _logger.debug(f"[Connection] API Response received (status: {response.status_code})")
             
             if response.status_code == 200:
                 # Client is already connected
@@ -342,6 +337,8 @@ class WhatsAppConnection(models.Model):
                 # QR code flow initiated - socket should be connecting/connected by now
                 _logger.info(f"[Connection] Step 3: Creating QR popup (socket should be ready)")
                 
+              
+                
                 # Check if QR code is in response (initial QR from REST)
                 qr_code = result.get('qrCode') or result.get('data', {}).get('qrCode') if isinstance(result.get('data'), dict) else None
                 
@@ -352,29 +349,29 @@ class WhatsAppConnection(models.Model):
                     'api_key': self.api_key,
                     'phone_number': self.from_field,
                     'message': result.get('message', 'Please scan the QR code with WhatsApp to connect.'),
-                    'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
-                    'countdown_seconds': 120,
-                    'is_expired': False,
+                    # 'qr_expires_at': fields.Datetime.now() + timedelta(seconds=120),
+                    # 'countdown_seconds': 120,
+                    # 'is_expired': False,
                 }
                 
-                # If QR code is in response, include it (initial QR from REST)
-                if qr_code:
-                    if not qr_code.startswith('data:image'):
-                        qr_code = f"data:image/png;base64,{qr_code}"
-                    popup_vals['qr_code_image'] = qr_code
-                    popup_vals['qr_code_filename'] = 'whatsapp_qr_code.png'
-                    popup_vals['last_qr_string'] = qr_code[:100]
+                # # If QR code is in response, include it (initial QR from REST)
+                # if qr_code:
+                #     if not qr_code.startswith('data:image'):
+                #         qr_code = f"data:image/png;base64,{qr_code}"
+                #     popup_vals['qr_code_image'] = qr_code
+                #     popup_vals['qr_code_filename'] = 'whatsapp_qr_code.png'
+                #     popup_vals['last_qr_string'] = qr_code[:100]
                 
-                popup = self.env['whatsapp.qr.popup'].create(popup_vals)
-                _logger.info(f"[Connection] Created QR popup ID: {popup.id}")
-                _logger.info(f"[Connection] Socket should be connected and ready to receive QR updates")
+                # popup = self.env['whatsapp.qr.popup'].create(popup_vals)
+                # _logger.info(f"[Connection] Created QR popup ID: {popup.id}")
+                # _logger.info(f"[Connection] Socket should be connected and ready to receive QR updates")
                 
                 # Return action to open popup
                 return {
                     'type': 'ir.actions.act_window',
                     'name': _('WhatsApp Connection - Scan QR Code'),
                     'res_model': 'whatsapp.qr.popup',
-                    'res_id': popup.id,
+                    # 'res_id': popup.id,
                     'view_mode': 'form',
                     'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
                     'target': 'new',
@@ -437,7 +434,8 @@ class WhatsAppConnection(models.Model):
         if not self._check_authorization():
             raise UserError(_("You are not authorized to use this connection."))
         
+        # Don't use sudo() - authorization already checked above
         # Force commit to make it visible immediately
-        self.sudo().socket_connection_ready = True
-        self.sudo().env.cr.commit()  # Commit immediately so Python can see it
+        self.socket_connection_ready = True
+        self.env.cr.commit()  # Commit immediately so Python can see it
         _logger.info(f"[Connection] Socket connection confirmed for {self.name} (ID: {self.id})")

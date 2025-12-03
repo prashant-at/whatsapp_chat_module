@@ -12,7 +12,7 @@
     <record id="whatsapp_connection_prashant" model="whatsapp.connection">
         <field name="name">Pconnection</field>
         <field name="from_field">+91 9157000128</field>
-        <field name="api_key">0f9c3f0f2a016ea0be9db8cea74bba56a36270a7e44904f5382a17de6fa5529f</field>
+        <field name="api_key">13adfd6a150e9dbfb36a71a6aed9dab117ad630199465b73ea571991ac58edab</field>
         <field name="is_default">false</field>
     </record>
 </odoo>
