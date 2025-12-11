@@ -9,7 +9,7 @@
         
         <!-- WhatsApp Web UI - Modern Interface (Primary) -->
         <menuitem id="menu_whatsapp_web" 
-                  name="📱 WhatsApp Web" 
+                  name="WhatsApp Web" 
                   action="action_whatsapp_web"
                   parent="menu_whatsapp_chat_root"
                   groups="whatsapp_chat_module.group_whatsapp_manager"

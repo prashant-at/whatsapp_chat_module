@@ -2,7 +2,7 @@ from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError, UserError
 import requests
 import logging
-from datetime import timedelta
+
 
 _logger = logging.getLogger(__name__)
 
@@ -172,13 +172,31 @@ class WhatsAppConnection(models.Model):
             else:
                 record.authorized_person_names = 'No one'
 
+    # def _compute_user_default_ids(self):
+    #     """Find all users who have this connection as default"""
+    #     for record in self:
+    #         users = self.env['res.users'].search([
+    #             ('whatsapp_default_connection_id', '=', record.id)
+    #         ])
+    #         record.user_default_ids = users
     def _compute_user_default_ids(self):
-        """Find all users who have this connection as default"""
+        if not self:
+            return
+        
+        # Single query for ALL connections
+        all_users = self.env['res.users'].search([
+            ('whatsapp_default_connection_id', 'in', self.ids)
+        ])
+        
+        # Build mapping
+        connection_users = {conn_id: self.env['res.users'] for conn_id in self.ids}
+        for user in all_users:
+            conn_id = user.whatsapp_default_connection_id.id
+            if conn_id in connection_users:
+                connection_users[conn_id] |= user
+        
         for record in self:
-            users = self.env['res.users'].search([
-                ('whatsapp_default_connection_id', '=', record.id)
-            ])
-            record.user_default_ids = users
+            record.user_default_ids = connection_users.get(record.id, self.env['res.users'])
 
     @api.model
     def init_user_default_ids(self):
@@ -207,15 +225,15 @@ class WhatsAppConnection(models.Model):
             }
         }
 
-    def _get_mail_thread_data(self, request_list):
-        """Implement mail thread data for WhatsApp connections"""
-        return {
-            'id': self.id,
-            'name': self.name,
-            'model': self._name,
-            'res_id': self.id,
-            'thread_type': 'document',
-        }
+    # def _get_mail_thread_data(self, request_list):
+    #     """Implement mail thread data for WhatsApp connections"""
+    #     return {
+    #         'id': self.id,
+    #         'name': self.name,
+    #         'model': self._name,
+    #         'res_id': self.id,
+    #         'thread_type': 'document',
+    #     }
 
     def _compute_display_name(self):
         """Override _compute_display_name to show phone numbers and default status"""
@@ -306,11 +324,8 @@ class WhatsAppConnection(models.Model):
             'Content-Type': 'application/json'
         }
         
-        _logger.info(f"[Connection] Step 2: Making REST call for {self.name}")
-        # Security: Don't log sensitive information like API keys, phone numbers, or full URLs
-        # _logger.info(f"[Connection] API URL: {api_url}")  # Removed for security
-        # _logger.info(f"[Connection] Phone: {self.from_field}")  # Removed for security
-        
+        _logger.info(f"[Connection]Making REST call for {self.name}")
+     
         try:
             response = requests.get(api_url, headers=headers)
             

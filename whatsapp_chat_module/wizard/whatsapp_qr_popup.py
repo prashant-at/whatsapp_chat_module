@@ -3,7 +3,7 @@
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 import logging
-from datetime import timedelta
+
 
 _logger = logging.getLogger(__name__)
 
@@ -156,6 +156,23 @@ class WhatsAppQRPopup(models.TransientModel):
                     campaigns = self.env['whatsapp.marketing.campaign']
                     campaigns._handle_ready_status_event(connection_id=connection_id)
                     self._handle_ready_for_compose(connection_id=connection_id)
+
+                    current_user = self.env.user
+                    if current_user and current_user.partner_id:
+                        payload = {
+                            'action': 'close',
+                            'title': _('WhatsApp Connected'),
+                            'message': _('WhatsApp connection is now ready.'),
+                            'type': 'success',
+                            'sticky': False,
+                            'success': True
+                        }
+                        self.env['bus.bus']._sendone(
+                            current_user.partner_id,
+                            'qr_popup_close',
+                            payload
+                        )
+
                     return True
                 
                 # Other status types are not handled here
@@ -174,9 +191,7 @@ class WhatsAppQRPopup(models.TransientModel):
                 if not qr_code.startswith('data:image'):
                     qr_code = f"data:image/png;base64,{qr_code}"
                 
-                # Legacy path: previously updated the latest popup in place.
-                # With the simplified flow we rely on the status event path above
-                # to open a fresh popup when needed, so we do nothing here.
+                
                 return False
             
             return False
@@ -200,7 +215,7 @@ class WhatsAppQRPopup(models.TransientModel):
             int: Number of wizards successfully processed
         """
         try:
-            # Step 1: Find the ready connection(s)
+            #  Find the ready connection(s)
             if connection_id:
                 ready_connection_ids = [connection_id]
                 _logger.info(f"[Ready Event] Using provided connection_id: {connection_id}")
@@ -216,7 +231,7 @@ class WhatsAppQRPopup(models.TransientModel):
                 ready_connection_ids = ready_connections.ids
                 _logger.info(f"[Ready Event] Found {len(ready_connection_ids)} ready connection(s): {ready_connection_ids}")
             
-            # Step 2: Find wizards with pending requests for ready connections
+            # Find wizards with pending requests for ready connections
             # Use raw SQL with FOR UPDATE SKIP LOCKED to prevent concurrent updates
             self.env.cr.execute("""
                 SELECT id, from_number

@@ -9,10 +9,9 @@ import re
 import json
 import base64
 import io
-from bs4 import BeautifulSoup
-from datetime import timedelta
+from ast import literal_eval
 import time
-import random
+from odoo import http
 
 _logger = logging.getLogger(__name__)
 
@@ -46,7 +45,6 @@ class WhatsAppMarketingCampaign(models.Model):
     mailing_model_name = fields.Char(
         string='Recipients Model Name',
         related='mailing_model_id.model',
-        readonly=True,
         store=True
     )
     
@@ -153,6 +151,18 @@ class WhatsAppMarketingCampaign(models.Model):
         help="JSON array of API requests that failed due to connection issues (status 201). Will be retried when connection is ready."
     )
 
+    campaign_id = fields.Char(
+        'Campaign ID',
+        help="Campaign ID returned from the marketing API after sending"
+    )
+    
+    recipient_status_ids = fields.One2many(
+        'whatsapp.campaign.recipient.status',
+        'campaign_id',
+        string='Recipient Statuses',
+        help="Status of each recipient in the campaign"
+    )
+
     @api.model
     def _get_authorized_connection_domain(self):
         """Get domain for connections user is authorized to access"""
@@ -192,12 +202,6 @@ class WhatsAppMarketingCampaign(models.Model):
         for campaign in self:
             campaign.mailing_on_mailing_list = (campaign.mailing_model_id == whatsapp_list_model_id) if whatsapp_list_model_id else False
     
-    @api.depends('mailing_model_id')
-    def _compute_use_whatsapp_lists(self):
-        """Compute if campaign uses WhatsApp mailing lists"""
-        whatsapp_list_model_id = self.env['ir.model']._get('whatsapp.mailing.list')
-        for campaign in self:
-            campaign.use_whatsapp_lists = (campaign.mailing_model_id == whatsapp_list_model_id) if whatsapp_list_model_id else False
 
     @api.depends('whatsapp_list_ids', 'mailing_model_id', 'mailing_domain', 'mailing_on_mailing_list')
     def _compute_total_recipients(self):
@@ -222,7 +226,7 @@ class WhatsAppMarketingCampaign(models.Model):
                     campaign.total_recipients = 0
                     continue
                 try:
-                    from ast import literal_eval
+                    
                     domain = self._safe_eval_domain(campaign.mailing_domain)
                 except Exception as e:
                     _logger.warning(f"Error evaluating domain for campaign {campaign.id}: {e}")
@@ -244,7 +248,7 @@ class WhatsAppMarketingCampaign(models.Model):
             return []
         
         try:
-            from ast import literal_eval
+           
             domain = literal_eval(domain_str)
             
             # Validate domain format - must be a list
@@ -276,6 +280,14 @@ class WhatsAppMarketingCampaign(models.Model):
                 return record.mobile
             elif hasattr(record, 'phone') and record.phone:
                 return record.phone
+            # Check partner_mobile/partner_phone (for hr.applicant)
+            if hasattr(record, 'partner_mobile') and record.partner_mobile:
+                return record.partner_mobile
+            elif hasattr(record, 'partner_phone') and record.partner_phone:
+                return record.partner_phone
+                
+            if hasattr(record,'partner_id') and record.partner_id:
+                return record.partner_id.mobile
             
         return None
 
@@ -300,7 +312,7 @@ class WhatsAppMarketingCampaign(models.Model):
             if not self.mailing_domain:
                 return recipients
             try:
-                from ast import literal_eval
+               
                 domain = self._safe_eval_domain(self.mailing_domain)
             except Exception as e:
                 _logger.warning(f"Error evaluating domain for campaign {self.id}: {e}")
@@ -459,6 +471,7 @@ class WhatsAppMarketingCampaign(models.Model):
             dict: {'success': bool, 'pending': bool, 'error': str, 'response': dict}
         """
         try:
+            print("Sending via marketing API _send_via_marketing_api called")
             # Get backend URL and API key
             backend_url = self.from_connection_id.get_backend_api_url() or "http://localhost:4000"
             api_url = f"{backend_url}/api/marketing"
@@ -474,7 +487,7 @@ class WhatsAppMarketingCampaign(models.Model):
             # Prepare form data
             form_data = {
                 'messageType': message_type,
-                'body': body,
+                'body': body.replace('\n',''),
             }
             
             # Clean phone numbers in tos and add recipients as tos[0], tos[1], etc.
@@ -491,49 +504,79 @@ class WhatsAppMarketingCampaign(models.Model):
             
             # Prepare files (attachments) for media types: image, video, document
             # Marketing API accepts messageType: image, video, document, chat
-            files = []
-            if message_type in ['image', 'video', 'document'] and self.attachment_ids:
-                import io
-                for attachment in self.attachment_ids:
-                    try:
-                        # Decode attachment data from base64
-                        b64_value = attachment.sudo().datas or ''
-                        if b64_value:
-                            # Handle string/bytes conversion
-                            if isinstance(b64_value, bytes):
-                                b64_value = b64_value.decode('utf-8', errors='ignore')
-                            # Remove data URI prefix if present
-                            if isinstance(b64_value, str) and b64_value.startswith('data:'):
-                                b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
+            # files = []
+            # if message_type in ['image', 'video', 'document'] and self.attachment_ids:
+            #     import io
+            #     for attachment in self.attachment_ids:
+            #         try:
+            #             # Decode attachment data from base64
+            #             b64_value = attachment.sudo().datas or ''
+            #             if b64_value:
+            #                 # Handle string/bytes conversion
+            #                 if isinstance(b64_value, bytes):
+            #                     b64_value = b64_value.decode('utf-8', errors='ignore')
+            #                 # Remove data URI prefix if present
+            #                 if isinstance(b64_value, str) and b64_value.startswith('data:'):
+            #                     b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
                             
-                            # Fix base64 padding
-                            if isinstance(b64_value, str):
-                                pad = len(b64_value) % 4
-                                if pad:
-                                    b64_value = b64_value + ('=' * (4 - pad))
+            #                 # Fix base64 padding
+            #                 if isinstance(b64_value, str):
+            #                     pad = len(b64_value) % 4
+            #                     if pad:
+            #                         b64_value = b64_value + ('=' * (4 - pad))
                                 
-                                file_data = base64.b64decode(b64_value)
-                        else:
-                            continue
-                    except Exception as e:
-                        _logger.error(f"Error decoding attachment {attachment.id} for marketing campaign: {e}")
-                        continue
+            #                     file_data = base64.b64decode(b64_value)
+            #             else:
+            #                 continue
+            #         except Exception as e:
+            #             _logger.error(f"Error decoding attachment {attachment.id} for marketing campaign: {e}")
+            #             continue
                     
-                    # Sanitize filename
-                    raw_name = (attachment.name or 'attachment')
-                    filename = raw_name.replace('/', '_').replace('\\', '_')
-                    mimetype = getattr(attachment, 'mimetype', None) or 'application/octet-stream'
+            #         # Sanitize filename
+            #         raw_name = (attachment.name or 'attachment')
+            #         filename = raw_name.replace('/', '_').replace('\\', '_')
+            #         mimetype = getattr(attachment, 'mimetype', None) or 'application/octet-stream'
                     
-                    # Force PDF mimetype if filename ends with .pdf
-                    if filename.lower().endswith('.pdf'):
-                        mimetype = 'application/pdf'
+            #         # Force PDF mimetype if filename ends with .pdf
+            #         if filename.lower().endswith('.pdf'):
+            #             mimetype = 'application/pdf'
                     
-                    # Add file
-                    if file_data and len(file_data) > 0:
-                        files.append((
-                            f'files[{len(files)}]',
-                            (filename, io.BytesIO(file_data), mimetype)
-                        ))
+            #         # Add file
+            #         if file_data and len(file_data) > 0:
+            #             files.append((
+            #                 f'files[{len(files)}]',
+            #                 (filename, io.BytesIO(file_data), mimetype)
+            #             ))
+            # Build files dict for requests (multipart/form-data)
+            files = {}
+
+            if message_type in ['image', 'video', 'document'] and self.attachment_ids:
+                for idx, attachment in enumerate(self.attachment_ids):
+
+                    # Decode base64 to bytes
+                    b64_value = attachment.datas or ''
+                    if isinstance(b64_value, bytes):
+                        b64_value = b64_value.decode('utf-8')
+
+                    if b64_value.startswith("data:"):
+                        b64_value = b64_value.split(",", 1)[1]
+
+                    # Fix padding
+                    pad = len(b64_value) % 4
+                    if pad:
+                        b64_value += "=" * (4 - pad)
+
+                    file_bytes = base64.b64decode(b64_value)
+
+                    filename = attachment.name.replace("/", "_").replace("\\", "_")
+                    mimetype = attachment.mimetype or "application/octet-stream"
+
+                    # Add to dict → REQUIRED for multipart
+                    files[f"files[{idx}]"] = (filename, file_bytes, mimetype)
+
+            # If no files, force multipart/form-data anyway
+            if not files:
+                files["empty"] = ("empty.txt", b"", "text/plain")
             
             # Make request with lowercase headers
             headers = {
@@ -541,11 +584,11 @@ class WhatsAppMarketingCampaign(models.Model):
                 'x-phone-number': phone_number,
                 'origin': self._get_origin(),
             }
-            
+            print("request data", form_data, files, headers)
             response = requests.post(
                 api_url,
                 data=form_data,
-                files=files if files else [],  # Always include files parameter (empty array if no attachments)
+                files=files if files else {},  # Always include files parameter (empty array if no attachments)
                 headers=headers,
                 timeout=30
             )
@@ -616,6 +659,156 @@ class WhatsAppMarketingCampaign(models.Model):
             _logger.exception(f"[Campaign {self.name}] Error calling marketing API: {e}")
             return {'success': False, 'error': str(e)}
 
+    def _parse_and_save_status_records(self, response_data):
+        """Parse API response and save/update recipient status records
+        
+        Args:
+            response_data: API response dict with structure: {'data': {'items': [{'to': 'phone', 'ack': 'status_code'}]}}
+            
+        Returns:
+            int: Number of status records created/updated
+        """
+        # Parse response - handle paginated structure: { "data": { "items": [...] } }
+        recipients = []
+        
+        if isinstance(response_data, dict):
+            if 'data' in response_data:
+                data = response_data['data']
+                if isinstance(data, dict) and 'items' in data:
+                    recipients = data['items']
+                elif isinstance(data, list):
+                    recipients = data
+            elif 'messages' in response_data:
+                recipients = response_data['messages']
+            elif 'recipients' in response_data:
+                recipients = response_data['recipients']
+        elif isinstance(response_data, list):
+            recipients = response_data
+        
+        if not recipients:
+            return 0
+        
+        # Get existing records indexed by phone number for efficient lookup
+        existing_records = {rec.phone: rec for rec in self.recipient_status_ids if rec.phone}
+        
+        # Mapping: ack value -> status text
+        ACK_STATUS_MAP = {
+            '-1': 'Error',
+            '0': 'Pending',
+            '1': 'Sent',
+            '2': 'Reached',
+            '3': 'Seen',
+            '4': 'Seen',
+        }
+        
+        # Process recipients: update existing or create new
+        updated_count = 0
+        created_count = 0
+        
+        for item in recipients:
+            # Extract phone from 'to' field (primary field in API response)
+            phone = item.get('to', '') or item.get('phone', '') or item.get('phoneNumber', '')
+            
+            # Extract ack and map to status text
+            ack = item.get('ack', '')
+            if isinstance(ack, (int, float)):
+                ack = str(int(ack))
+            else:
+                ack = str(ack) if ack else ''
+            
+            # Map ack to status text (default to 'pending' if unknown)
+            status = ACK_STATUS_MAP.get(ack, 'pending')
+            
+            if phone:
+                if phone in existing_records:
+                    # Update existing record
+                    existing_records[phone].write({'status': status})
+                    updated_count += 1
+                else:
+                    # Create new record
+                    self.env['whatsapp.campaign.recipient.status'].create({
+                        'campaign_id': self.id,
+                        'phone': phone,
+                        'status': status,
+                    })
+                    created_count += 1
+        
+        return updated_count + created_count
+
+    def _fetch_status_via_api(self):
+        """Call /api/marketing-message endpoint with pending request support
+        
+        Returns:
+            dict: {'success': bool, 'pending': bool, 'error': str, 'response': dict}
+        """
+        try:
+            # Get backend URL and API key
+            backend_url = self.from_connection_id.get_backend_api_url() or "http://localhost:4000"
+            api_url = f"{backend_url}/api/marketing-message"
+            api_key = self.from_connection_id.api_key
+            phone_number = self.from_connection_id.from_field
+            
+            if not api_key:
+                return {'success': False, 'error': 'API key not found'}
+            
+            # Prepare headers
+            headers = {
+                'x-api-key': api_key,
+                'x-phone-number': phone_number,
+                'origin': self._get_origin(),
+            }
+            
+            # Make GET request with marketingId and hasPagination query parameters
+            response = requests.get(
+                api_url,
+                params={
+                    'marketingId': self.campaign_id,
+                    'hasPagination': 'true'
+                },
+                headers=headers,
+                timeout=30
+            )
+            
+            # Status 201 - store in pending requests, wait for socket event
+            if response.status_code == 201:
+                pending_requests = json.loads(self.pending_requests or '[]')
+                
+                pending_requests.append({
+                    'type': 'fetchStatus',
+                    'data': {
+                        'campaign_id': self.campaign_id,
+                    },
+                    'timestamp': fields.Datetime.now().isoformat(),
+                })
+                self.write({'pending_requests': json.dumps(pending_requests)})
+                _logger.info(f"[Campaign {self.name}] Status fetch request stored in pending (status 201). Waiting for socket event.")
+                return {'success': False, 'pending': True}
+            
+            # Status 200 - success
+            if response.status_code == 200:
+                try:
+                    print("response", response.json())
+                    response_data = response.json()
+                    return {'success': True, 'response': response_data}
+                except Exception as json_error:
+                    _logger.warning(f"[Campaign {self.name}] Could not parse status response JSON: {json_error}")
+                    return {'success': True, 'response': {}}
+            else:
+                error_msg = f"API returned status {response.status_code}"
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('message', error_msg)
+                except:
+                    pass
+                return {'success': False, 'error': error_msg}
+                
+        except requests.exceptions.RequestException as e:
+            _logger.exception(f"[Campaign {self.name}] Network error fetching status: {e}")
+            return {'success': False, 'error': f'Network error: {str(e)}'}
+        except Exception as e:
+            _logger.exception(f"[Campaign {self.name}] Error fetching status: {e}")
+            return {'success': False, 'error': str(e)}
+
     def action_send(self):
         """Send campaign via new marketing API - backend handles all sending"""
         self.ensure_one()
@@ -647,6 +840,7 @@ class WhatsAppMarketingCampaign(models.Model):
         
         # Get all recipients
         recipients = self._get_recipients()
+        print("recipients", recipients)
         if not recipients:
             raise UserError(_("No valid phone numbers found in selected mailing lists"))
         
@@ -662,6 +856,7 @@ class WhatsAppMarketingCampaign(models.Model):
         message_type, file_type = self._determine_message_type()
         
         textContent = html2text.html2text(self.body) if self.body else ""
+        print("textContent", textContent)
         # Call new marketing API
         result = self._send_via_marketing_api(
             body=textContent,
@@ -672,7 +867,7 @@ class WhatsAppMarketingCampaign(models.Model):
         # Handle pending (status 201) - request stored, waiting for socket event
         if result.get('pending'):
                 self.write({
-                    'state': 'sending',
+                'state': 'sending',
                 'sent_count': 0,
                     'failed_count': 0,
                 })
@@ -690,10 +885,17 @@ class WhatsAppMarketingCampaign(models.Model):
         
         # Handle success
         if result.get('success'):
+            # Extract campaign_id from API response
+            response_data = result.get('response', {})
+            print("response_data", response_data)
+            # api_campaign_id = response_data.get('campaignId') or response_data.get('id')
+            api_campaign_id = response_data.get('data', {}).get('id') 
+            
             self.write({
                 'state': 'sent',
                 'sent_count': len(recipients),
                 'failed_count': 0,
+                'campaign_id': api_campaign_id,
             })
 
             return {
@@ -701,7 +903,7 @@ class WhatsAppMarketingCampaign(models.Model):
                 'tag': 'display_notification',
                 'params': {
                     'title': _('Campaign Sent'),
-                    'message': _('Campaign sent successfully to %d recipients. Backend is processing the messages.') % len(recipients),
+                    'message': _('Campaign sent successfully to %d recipients.') % len(recipients),
                     'type': 'success',
                     'sticky': False,
                     }
@@ -712,246 +914,296 @@ class WhatsAppMarketingCampaign(models.Model):
             self.write({'state': 'draft'})
             raise UserError(_("Failed to send campaign: %s") % error_msg)
 
-    def _send_to_recipient_via_api(self, phone, contact_name, body, attachments, test_wizard_id=None, test_phone_to=None):
-        """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed
-        
-        Args:
-            phone: Phone number to send to
-            contact_name: Name of the contact
-            body: Message body
-            attachments: Attachments to send
-            test_wizard_id: Optional ID of test wizard if this is a test send
-            test_phone_to: Optional test phone number to store in QR popup (for resend if wizard is closed)
-        """
+    def action_fetch_status(self):
+        """Fetch recipient statuses from the marketing API"""
         self.ensure_one()
         
-        raw_phone = phone or ''
-        compact = re.sub(r'\s+', ' ', raw_phone).strip()
-        m = re.match(r'^(\+\d{1,3})\s*(.*)$', compact)
-        if m:
-            cc = m.group(1)
-            rest = re.sub(r'\s+', '', m.group(2))
-            phone = f"{cc} {rest}" if rest else cc
-        else:
-            phone = re.sub(r'\s+', '', raw_phone)
-    
-        # Security: Don't log phone numbers in production
-        _logger.debug(f"[Campaign] Sending message to recipient")
-        try:
-            # Convert HTML body to plain text
-            if body:
-                soup = BeautifulSoup(body, 'html.parser')
-                plain_text = soup.get_text(separator=' ')
-                plain_text = re.sub(r' {3,}', ' ', plain_text)
-                plain_text = plain_text.replace('&nbsp;', ' ')
-                plain_text = plain_text.replace('&amp;', '&')
-                plain_text = plain_text.replace('&lt;', '<')
-                plain_text = plain_text.replace('&gt;', '>')
-                plain_text = plain_text.replace('&quot;', '"')
-            else:
-                plain_text = ""
-            
-            # Prepare headers
-            headers = {
-                'x-api-key': self.from_connection_id.api_key,
-                'x-phone-number': self.from_connection_id.from_field,
-                'origin': self._get_origin(),
-            }
-            api_url = "http://localhost:4000"
-            # backend_url = self.env['whatsapp.connection'].get_backend_api_url()
-            api_url = api_url + "/api/message"
-            # Security: Don't log API URL which might contain sensitive information
-            _logger.debug(f"[Campaign] Sending message via API")
-            has_attachments = bool(attachments)
-            
-            # Determine message type and file type handling based on backend requirements
-            # Backend accepts: chat, image, video, document, audio, vcard, multi_vcard, location
-            image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.webp', '.ico', '.heic'}
-            video_extensions = {'.mp4', '.webm', '.ogv', '.avi', '.mov', '.wmv', '.mkv', '.flv', '.3gp'}
-            audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.mid', '.midi'}
-            document_extensions = {
-                '.txt', '.csv', '.html', '.css', '.js', '.json', '.xml', '.md', '.yml', '.yaml', '.pdf', 
-                '.zip', '.rar', '.7z', '.tar', '.gz', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
-                '.odt', '.ods', '.odp', '.odg', '.py', '.java', '.c', '.cpp', '.sh', '.php', '.rb', '.sql', 
-                '.ics', '.vcard', '.vcf', '.ttf', '.otf', '.woff', '.woff2', '.deb', '.rpm', '.apk', '.dmg', 
-                '.pkg', '.bin', '.wasm'
-            }
-            
-            message_type = 'chat'
-            file_type = None
-            
-            if has_attachments:
-                # Check first attachment to determine type
-                attachment = attachments[0]
-                filename = (attachment.name or 'attachment').lower()
-                
-                # Extract file extension
-                if '.' in filename:
-                    file_ext = '.' + filename.rsplit('.', 1)[1]
-                else:
-                    file_ext = None
-                
-                # Determine message type based on file extension
-                if file_ext in image_extensions:
-                    message_type = 'image'
-                elif file_ext in video_extensions:
-                    message_type = 'video'
-                elif file_ext in audio_extensions:
-                    message_type = 'audio'
-                elif file_ext in document_extensions:
-                    message_type = 'document'
-                    # Extract fileType for documents (without the dot)
-                    file_type = file_ext[1:].lower()  # Remove dot and lowercase
-                else:
-                    # Try to infer from mimetype
-                    mimetype = (getattr(attachment, 'mimetype', '') or '').lower()
-                    if any(img in mimetype for img in ['image', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']):
-                        message_type = 'image'
-                    elif any(vid in mimetype for vid in ['video', 'mp4', 'webm', 'avi', 'mov']):
-                        message_type = 'video'
-                    elif any(aud in mimetype for aud in ['audio', 'mp3', 'wav', 'ogg', 'm4a']):
-                        message_type = 'audio'
-                    else:
-                        # Default to document with bin fileType
-                        message_type = 'document'
-                        file_type = 'bin'
-            
-            # Debug: message type logged at debug level
-            _logger.debug(f"[Campaign] Message type: {message_type}")
-            # Always use FormData for all message types
-            form_data = {
-                'byChatId': 'false',
-                'to': phone,
-                'messageType': message_type,
-                'body': plain_text,
-            }
-            
-            # Add fileType parameter only for documents
-            if message_type == 'document' and file_type:
-                form_data['fileType'] = file_type
-            
-            # Prepare files list - always include, even if empty
-            files = []
-            if has_attachments:
-                for attachment in attachments:
-                    file_data = b''
-                    
-                    try:
-                        b64_value = attachment.sudo().datas or ''
-                        if isinstance(b64_value, bytes):
-                            b64_value = b64_value.decode('utf-8', errors='ignore')
-                        if isinstance(b64_value, str) and b64_value.startswith('data:'):
-                            b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
-                        if isinstance(b64_value, str):
-                            pad = len(b64_value) % 4
-                            if pad:
-                                b64_value = b64_value + ('=' * (4 - pad))
-                            file_data = base64.b64decode(b64_value)
-                    except Exception as e:
-                        _logger.error(f"Error decoding attachment: {e}")
-                        continue
-                    
-                    filename = (attachment.name or 'attachment').replace('/', '_').replace('\\', '_')
-                    mimetype = getattr(attachment, 'mimetype', None) or 'application/octet-stream'
-                    if filename.lower().endswith('.pdf'):
-                        mimetype = 'application/pdf'
-                    
-                    if file_data and len(file_data) > 0:
-                        files.append((f'files[{len(files)}]', (filename, io.BytesIO(file_data), mimetype)))
-            
-            # Always send with FormData - files will be empty list [] if no attachments
-            response = requests.post(
-                api_url,
-                data=form_data,
-                files=files if files else [],  # Empty list [] if no attachments
-                headers=headers,
-                timeout=120
-            )
-            
-            # Handle response - 201 indicates QR code scanning is needed
-            if response.status_code == 201:
-                # Store request in pending - QR will come via socket event
-                pending_requests = json.loads(self.pending_requests or '[]')
-                
-                # Store files as base64-encoded strings for JSON serialization
-                files_data = []
-                if files:
-                    for f in files:
-                        filename = f[0]
-                        file_obj = f[1]
-                        if hasattr(file_obj, 'read'):
-                            file_bytes = file_obj.read()
-                            if hasattr(file_obj, 'seek'):
-                                file_obj.seek(0)
-                        else:
-                            file_bytes = file_obj if isinstance(file_obj, bytes) else b''
-                        # Encode to base64 for JSON storage
-                        file_b64 = base64.b64encode(file_bytes).decode('utf-8') if file_bytes else ''
-                        files_data.append((filename, file_b64))
-                
-                # Store request data for retry
-                request_data = {
-                    'type': 'sendMessage',
-                    'data': {
-                        'api_url': api_url,
-                        'form_data': form_data,
-                        'files': files_data,  # List of (filename, base64_string) tuples
-                        'headers': headers,
-                        'phone': phone,
-                        'contact_name': contact_name,
-                        'body': plain_text,
-                        'attachments': [att.id for att in attachments] if attachments else [],
-                        'test_wizard_id': test_wizard_id,
-                        'test_phone_to': test_phone_to,
-                    },
-                    'timestamp': fields.Datetime.now().isoformat(),
+        if not self.campaign_id:
+            raise UserError(_("No campaign ID available. Please send the campaign first."))
+        
+        if not self.from_connection_id:
+            raise UserError(_("No connection configured for this campaign."))
+        
+        # Ensure socket is connected (for QR handling if needed)
+        self._ensure_socket_connected(context_name="Fetch Status")
+        
+        # Call status API
+        result = self._fetch_status_via_api()
+        
+        # Handle pending (status 201) - request stored, waiting for socket event
+        if result.get('pending'):
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Status Fetch Queued'),
+                    'message': _('Status fetch request queued. Waiting for connection to be ready. It will be retried automatically.'),
+                    'type': 'info',
+                    'sticky': False,
                 }
-                
-                pending_requests.append(request_data)
-                self.write({'pending_requests': json.dumps(pending_requests)})
-                
-                _logger.info(f"[Campaign {self.name}] Request stored in pending (status 201). Waiting for socket event.")
-                
-                # For test messages, still return qr_popup_needed flag for UI feedback
-                # But QR popup will be created from socket event
-                if test_wizard_id:
-                    return {
-                        'qr_popup_needed': True,
-                        'pending': True,
-                    }
-                else:
-                    return {'pending': True}
+            }
+        
+        # Handle success
+        if result.get('success'):
+            response_data = result.get('response', {})
+            status_count = self._parse_and_save_status_records(response_data)
             
-            # Handle 200 status (success)
-            elif response.status_code == 200:
-                try:
-                    response_data = response.json()
-                except Exception as json_error:
-                    return {'success': False, 'error': f'Invalid JSON: {json_error}'}
-                
-                # Check success flag
-                if response_data.get('success', False):
-                    return {'success': True}
-                else:
-                    error_detail = response_data.get('error', response_data.get('message', 'Unknown error'))
-                    if isinstance(error_detail, dict):
-                        error_detail = error_detail.get('message', str(error_detail))
-                    return {'success': False, 'error': error_detail}
-            else:
-                # Error response
-                try:
-                    error_response = response.json()
-                    error_detail = error_response.get('error', error_response.get('message', 'Unknown error'))
-                    if isinstance(error_detail, dict):
-                        error_detail = error_detail.get('message', str(error_detail))
-                except:
-                    error_detail = response.text[:200] if response.text else "Unknown error"
-                
-                return {'success': False, 'error': error_detail}
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Status Fetched'),
+                    'message': _('Retrieved status for %d recipients.') % status_count,
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        else:
+            # Failed
+            error_msg = result.get('error', 'Unknown error')
+            raise UserError(_("Failed to fetch status: %s") % error_msg)
 
-        except Exception as e:
-            _logger.exception(f"Error sending to {contact_name}: {e}")
-            return {'success': False, 'error': str(e)}
+    # def _send_to_recipient_via_api(self, phone, contact_name, body, attachments, test_wizard_id=None, test_phone_to=None):
+    #     """Send WhatsApp message via REST API - returns dict with success/qr_popup_needed
+        
+    #     Args:
+    #         phone: Phone number to send to
+    #         contact_name: Name of the contact
+    #         body: Message body
+    #         attachments: Attachments to send
+    #         test_wizard_id: Optional ID of test wizard if this is a test send
+    #         test_phone_to: Optional test phone number to store in QR popup (for resend if wizard is closed)
+    #     """
+    #     self.ensure_one()
+        
+    #     raw_phone = phone or ''
+    #     compact = re.sub(r'\s+', ' ', raw_phone).strip()
+    #     m = re.match(r'^(\+\d{1,3})\s*(.*)$', compact)
+    #     if m:
+    #         cc = m.group(1)
+    #         rest = re.sub(r'\s+', '', m.group(2))
+    #         phone = f"{cc} {rest}" if rest else cc
+    #     else:
+    #         phone = re.sub(r'\s+', '', raw_phone)
+    
+    #     # Security: Don't log phone numbers in production
+    #     _logger.debug(f"[Campaign] Sending message to recipient")
+    #     try:
+    #         # Convert HTML body to plain text
+    #         if body:
+    #             soup = BeautifulSoup(body, 'html.parser')
+    #             plain_text = soup.get_text(separator=' ')
+    #             plain_text = re.sub(r' {3,}', ' ', plain_text)
+    #             plain_text = plain_text.replace('&nbsp;', ' ')
+    #             plain_text = plain_text.replace('&amp;', '&')
+    #             plain_text = plain_text.replace('&lt;', '<')
+    #             plain_text = plain_text.replace('&gt;', '>')
+    #             plain_text = plain_text.replace('&quot;', '"')
+    #         else:
+    #             plain_text = ""
+            
+    #         # Prepare headers
+    #         headers = {
+    #             'x-api-key': self.from_connection_id.api_key,
+    #             'x-phone-number': self.from_connection_id.from_field,
+    #             'origin': self._get_origin(),
+    #         }
+    #         api_url = "http://localhost:4000"
+    #         # backend_url = self.env['whatsapp.connection'].get_backend_api_url()
+    #         api_url = api_url + "/api/message"
+    #         # Security: Don't log API URL which might contain sensitive information
+    #         _logger.debug(f"[Campaign] Sending message via API")
+    #         has_attachments = bool(attachments)
+            
+    #         # Determine message type and file type handling based on backend requirements
+    #         # Backend accepts: chat, image, video, document, audio, vcard, multi_vcard, location
+    #         image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.tif', '.svg', '.webp', '.ico', '.heic'}
+    #         video_extensions = {'.mp4', '.webm', '.ogv', '.avi', '.mov', '.wmv', '.mkv', '.flv', '.3gp'}
+    #         audio_extensions = {'.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac', '.mid', '.midi'}
+    #         document_extensions = {
+    #             '.txt', '.csv', '.html', '.css', '.js', '.json', '.xml', '.md', '.yml', '.yaml', '.pdf', 
+    #             '.zip', '.rar', '.7z', '.tar', '.gz', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', 
+    #             '.odt', '.ods', '.odp', '.odg', '.py', '.java', '.c', '.cpp', '.sh', '.php', '.rb', '.sql', 
+    #             '.ics', '.vcard', '.vcf', '.ttf', '.otf', '.woff', '.woff2', '.deb', '.rpm', '.apk', '.dmg', 
+    #             '.pkg', '.bin', '.wasm'
+    #         }
+            
+    #         message_type = 'chat'
+    #         file_type = None
+            
+    #         if has_attachments:
+    #             # Check first attachment to determine type
+    #             attachment = attachments[0]
+    #             filename = (attachment.name or 'attachment').lower()
+                
+    #             # Extract file extension
+    #             if '.' in filename:
+    #                 file_ext = '.' + filename.rsplit('.', 1)[1]
+    #             else:
+    #                 file_ext = None
+                
+    #             # Determine message type based on file extension
+    #             if file_ext in image_extensions:
+    #                 message_type = 'image'
+    #             elif file_ext in video_extensions:
+    #                 message_type = 'video'
+    #             elif file_ext in audio_extensions:
+    #                 message_type = 'audio'
+    #             elif file_ext in document_extensions:
+    #                 message_type = 'document'
+    #                 # Extract fileType for documents (without the dot)
+    #                 file_type = file_ext[1:].lower()  # Remove dot and lowercase
+    #             else:
+    #                 # Try to infer from mimetype
+    #                 mimetype = (getattr(attachment, 'mimetype', '') or '').lower()
+    #                 if any(img in mimetype for img in ['image', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg']):
+    #                     message_type = 'image'
+    #                 elif any(vid in mimetype for vid in ['video', 'mp4', 'webm', 'avi', 'mov']):
+    #                     message_type = 'video'
+    #                 elif any(aud in mimetype for aud in ['audio', 'mp3', 'wav', 'ogg', 'm4a']):
+    #                     message_type = 'audio'
+    #                 else:
+    #                     # Default to document with bin fileType
+    #                     message_type = 'document'
+    #                     file_type = 'bin'
+            
+    #         # Debug: message type logged at debug level
+    #         _logger.debug(f"[Campaign] Message type: {message_type}")
+    #         # Always use FormData for all message types
+    #         form_data = {
+    #             'byChatId': 'false',
+    #             'to': phone,
+    #             'messageType': message_type,
+    #             'body': plain_text,
+    #         }
+            
+    #         # Add fileType parameter only for documents
+    #         if message_type == 'document' and file_type:
+    #             form_data['fileType'] = file_type
+            
+    #         # Prepare files list - always include, even if empty
+    #         files = []
+    #         if has_attachments:
+    #             for attachment in attachments:
+    #                 file_data = b''
+                    
+    #                 try:
+    #                     b64_value = attachment.sudo().datas or ''
+    #                     if isinstance(b64_value, bytes):
+    #                         b64_value = b64_value.decode('utf-8', errors='ignore')
+    #                     if isinstance(b64_value, str) and b64_value.startswith('data:'):
+    #                         b64_value = b64_value.split(',', 1)[1] if ',' in b64_value else b64_value
+    #                     if isinstance(b64_value, str):
+    #                         pad = len(b64_value) % 4
+    #                         if pad:
+    #                             b64_value = b64_value + ('=' * (4 - pad))
+    #                         file_data = base64.b64decode(b64_value)
+    #                 except Exception as e:
+    #                     _logger.error(f"Error decoding attachment: {e}")
+    #                     continue
+                    
+    #                 filename = (attachment.name or 'attachment').replace('/', '_').replace('\\', '_')
+    #                 mimetype = getattr(attachment, 'mimetype', None) or 'application/octet-stream'
+    #                 if filename.lower().endswith('.pdf'):
+    #                     mimetype = 'application/pdf'
+                    
+    #                 if file_data and len(file_data) > 0:
+    #                     files.append((f'files[{len(files)}]', (filename, io.BytesIO(file_data), mimetype)))
+            
+    #         # Always send with FormData - files will be empty list [] if no attachments
+    #         print("request data", form_data, files, headers)
+    #         response = requests.post(
+    #             api_url,
+    #             data=form_data,
+    #             files=files or {},  # Empty list [] if no attachments
+    #             headers=headers,
+    #             timeout=120
+    #         )
+            
+    #         # Handle response - 201 indicates QR code scanning is needed
+    #         if response.status_code == 201:
+    #             # Store request in pending - QR will come via socket event
+    #             pending_requests = json.loads(self.pending_requests or '[]')
+                
+    #             # Store files as base64-encoded strings for JSON serialization
+    #             files_data = []
+    #             if files:
+    #                 for f in files:
+    #                     filename = f[0]
+    #                     file_obj = f[1]
+    #                     if hasattr(file_obj, 'read'):
+    #                         file_bytes = file_obj.read()
+    #                         if hasattr(file_obj, 'seek'):
+    #                             file_obj.seek(0)
+    #                     else:
+    #                         file_bytes = file_obj if isinstance(file_obj, bytes) else b''
+    #                     # Encode to base64 for JSON storage
+    #                     file_b64 = base64.b64encode(file_bytes).decode('utf-8') if file_bytes else ''
+    #                     files_data.append((filename, file_b64))
+                
+    #             # Store request data for retry
+    #             request_data = {
+    #                 'type': 'sendMessage',
+    #                 'data': {
+    #                     'api_url': api_url,
+    #                     'form_data': form_data,
+    #                     'files': files_data,  # List of (filename, base64_string) tuples
+    #                     'headers': headers,
+    #                     'phone': phone,
+    #                     'contact_name': contact_name,
+    #                     'body': plain_text,
+    #                     'attachments': [att.id for att in attachments] if attachments else [],
+    #                     'test_wizard_id': test_wizard_id,
+    #                     'test_phone_to': test_phone_to,
+    #                 },
+    #                 'timestamp': fields.Datetime.now().isoformat(),
+    #             }
+                
+    #             pending_requests.append(request_data)
+    #             self.write({'pending_requests': json.dumps(pending_requests)})
+                
+    #             _logger.info(f"[Campaign {self.name}] Request stored in pending (status 201). Waiting for socket event.")
+                
+    #             # For test messages, still return qr_popup_needed flag for UI feedback
+    #             # But QR popup will be created from socket event
+    #             if test_wizard_id:
+    #                 return {
+    #                     'qr_popup_needed': True,
+    #                     'pending': True,
+    #                 }
+    #             else:
+    #                 return {'pending': True}
+            
+    #         # Handle 200 status (success)
+    #         elif response.status_code == 200:
+    #             try:
+    #                 response_data = response.json()
+    #             except Exception as json_error:
+    #                 return {'success': False, 'error': f'Invalid JSON: {json_error}'}
+                
+    #             # Check success flag
+    #             if response_data.get('success', False):
+    #                 return {'success': True}
+    #             else:
+    #                 error_detail = response_data.get('error', response_data.get('message', 'Unknown error'))
+    #                 if isinstance(error_detail, dict):
+    #                     error_detail = error_detail.get('message', str(error_detail))
+    #                 return {'success': False, 'error': error_detail}
+    #         else:
+    #             # Error response
+    #             try:
+    #                 error_response = response.json()
+    #                 error_detail = error_response.get('error', error_response.get('message', 'Unknown error'))
+    #                 if isinstance(error_detail, dict):
+    #                     error_detail = error_detail.get('message', str(error_detail))
+    #             except:
+    #                 error_detail = response.text[:200] if response.text else "Unknown error"
+                
+    #             return {'success': False, 'error': error_detail}
+
+    #     except Exception as e:
+    #         _logger.exception(f"Error sending to {contact_name}: {e}")
+    #         return {'success': False, 'error': str(e)}
 
    
 
@@ -959,7 +1211,7 @@ class WhatsAppMarketingCampaign(models.Model):
         """Get origin from request headers"""
         origin = '127.0.0.1'
         try:
-            from odoo import http
+            
             request = http.request
             if request and hasattr(request, 'httprequest'):
                 origin = request.httprequest.headers.get('Origin') or \
@@ -1124,6 +1376,12 @@ class WhatsAppMarketingCampaign(models.Model):
                             )
                             
                             if result.get('success'):
+                                # Extract and save campaign_id from response
+                                response_data = result.get('response', {})
+                                api_campaign_id = response_data.get('data', {}).get('id')
+                                if api_campaign_id:
+                                    campaign.write({'campaign_id': api_campaign_id})
+                                
                                 successful += 1
                                 _logger.info(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} retried successfully")
                             elif result.get('pending'):
@@ -1132,6 +1390,21 @@ class WhatsAppMarketingCampaign(models.Model):
                             else:
                                 failed += 1
                                 _logger.warning(f"[Ready Event] Campaign {campaign.name}: Request {idx}/{len(pending_requests)} failed: {result.get('error')}")
+                        
+                        elif request_type == 'fetchStatus':
+                            result = campaign._fetch_status_via_api()
+                            
+                            if result.get('success'):
+                                response_data = result.get('response', {})
+                                status_count = campaign._parse_and_save_status_records(response_data)
+                                successful += 1
+                                _logger.info(f"[Ready Event] Campaign {campaign.name}: Status fetch {idx}/{len(pending_requests)} retried successfully, retrieved {status_count} statuses")
+                            elif result.get('pending'):
+                                still_pending.append(request)
+                                _logger.info(f"[Ready Event] Campaign {campaign.name}: Status fetch {idx}/{len(pending_requests)} still pending (201)")
+                            else:
+                                failed += 1
+                                _logger.warning(f"[Ready Event] Campaign {campaign.name}: Status fetch {idx}/{len(pending_requests)} failed: {result.get('error')}")
                         
                         elif request_type == 'sendMessage':
                             # Retry single message send
@@ -1183,6 +1456,26 @@ class WhatsAppMarketingCampaign(models.Model):
                         'pending_requests': json.dumps(still_pending),
                     })
                     
+                    # Update campaign state and counts if all requests are processed
+                    if not still_pending:  # All requests completed (successfully or failed)
+                        # All pending requests have been processed
+                        # Each request = 1 recipient
+                        campaign.write({
+                            'state': 'sent',
+                            'sent_count': campaign.sent_count + successful,
+                            'failed_count': campaign.failed_count + failed,
+                        })
+                        _logger.info(f"[Ready Event] Campaign {campaign.name}: All requests processed. State updated to 'sent'. Success: {successful}, Failed: {failed}")
+                    else:
+                        # Some requests are still pending, keep state as 'sending'
+                        # Update counts for completed requests (each request = 1 recipient)
+                        campaign.write({
+                            'sent_count': campaign.sent_count + successful,
+                            'failed_count': campaign.failed_count + failed,
+                        })
+                        _logger.info(f"[Ready Event] Campaign {campaign.name}: {len(still_pending)} requests still pending. State remains 'sending'. Success: {successful}, Failed: {failed}")
+                    
+                    
                     retried_count += len(pending_requests)
                     processed_count += 1
                     _logger.info(f"[Ready Event] Campaign {campaign.name}: Retried {len(pending_requests)} requests - {successful} success, {failed} failed, {len(still_pending)} still pending")
@@ -1197,6 +1490,55 @@ class WhatsAppMarketingCampaign(models.Model):
             _logger.exception(f"[Ready Event] Error handling ready status event: {e}")
             return False
 
+   
+
+class WhatsAppCampaignRecipientStatus(models.Model):
+    _name = 'whatsapp.campaign.recipient.status'
+    _description = 'WhatsApp Campaign Recipient Status'
+    _order = 'id'
+
+    campaign_id = fields.Many2one(
+        'whatsapp.marketing.campaign',
+        string='Campaign',
+        ondelete='cascade'
+    )
+    phone = fields.Char(
+        'Phone Number',
+        help="Recipient phone number"
+    )
+    status = fields.Char(
+        'Status',
+        help="Delivery status from the API (Error, Pending, Sent, Reached, Seen)"
+    )
+    
+    status_display = fields.Html(
+        string='Status',
+        compute='_compute_status_display',
+        sanitize=False,
+        help="Status displayed as colored tag"
+    )
+    
+    @api.depends('status')
+    def _compute_status_display(self):
+        """Compute HTML tag for status display with exact custom colors"""
+        STATUS_CONFIG = {
+            'Error': ('Error', '#E53935','#ffffff'),
+            'Pending': ('Pending', '#FB8C00','#ffffff'),
+            'Sent': ('Sent', '#ffff00','#000000'),
+            'Reached': ('Reached', '#1E88E5','#ffffff'),
+            'Seen': ('Seen','#43A047','#ffffff'),
+        }
+        
+        for record in self:
+            status = record.status or ''
+            config = STATUS_CONFIG.get(status) or STATUS_CONFIG.get(status.lower(), ('Pending', '#FB8C00'))
+            text, color, text_color = config
+
+            record.status_display = f'''
+                <span style="background-color: {color}; color: {text_color}; padding: 3px 12px; border-radius: 100px; font-size: 12px; font-weight: 500; display: inline-block;">
+                    {text}
+                </span>
+            '''
    
 
 class WhatsAppMarketingCampaignTest(models.TransientModel):
@@ -1246,15 +1588,10 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
         )
         
         # Send test message
-        result = self.campaign_id._send_to_recipient_via_api(
-            self.phone_to.strip(),
-            'Test Recipient',
-            self.campaign_id.body,
-            self.campaign_id.attachment_ids,
-            test_wizard_id=self.id,
-            test_phone_to=self.phone_to.strip()
-        )
-        
+        text = html2text.html2text(self.campaign_id.body)
+        message_type, file_type = self.campaign_id._determine_message_type()
+        tos = [{'name': 'Test Recipient', 'phone': self.phone_to.strip()}]
+        result = self.campaign_id._send_via_marketing_api(body=text, tos=tos, message_type=message_type)
         
         if result.get('success'):
             return {
@@ -1269,83 +1606,79 @@ class WhatsAppMarketingCampaignTest(models.TransientModel):
         else:
             raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
 
-    def resend_test(self, popup=False):
-        """Resend test message after QR authentication"""
-        self.ensure_one()
+    # def resend_test(self, popup=False):
+    #     """Resend test message after QR authentication"""
+    #     self.ensure_one()
         
-        if not self.campaign_id.body:
-            raise UserError(_("Please enter campaign body in the campaign"))
+    #     if not self.campaign_id.body:
+    #         raise UserError(_("Please enter campaign body in the campaign"))
         
-        if not self.campaign_id.from_connection_id:
-            raise UserError(_("Please select a connection in the campaign"))
+    #     if not self.campaign_id.from_connection_id:
+    #         raise UserError(_("Please select a connection in the campaign"))
         
-        if not self.phone_to:
-            raise UserError(_("Please enter a phone number"))
+    #     if not self.phone_to:
+    #         raise UserError(_("Please enter a phone number"))
         
-        # Ensure socket is connected (in case connection changed after QR scan)
-        self.campaign_id._ensure_socket_connected(
-            connection=self.campaign_id.from_connection_id,
-            context_name="Test Resend"
-        )
+    #     # Ensure socket is connected (in case connection changed after QR scan)
+    #     self.campaign_id._ensure_socket_connected(
+    #         connection=self.campaign_id.from_connection_id,
+    #         context_name="Test Resend"
+    #     )
         
-        # Send test message again
-        result = self.campaign_id._send_to_recipient_via_api(
-            self.phone_to.strip(),
-            'Test Recipient',
-            self.campaign_id.body,
-            self.campaign_id.attachment_ids,
-            test_wizard_id=self.id,
-            test_phone_to=self.phone_to.strip()
-        )
+    #     text = html2text.html2text(self.campaign_id.body)
+    #     message_type, file_type = self.campaign_id._determine_message_type()
+    #     tos = [{'name': 'Test Recipient', 'phone': self.phone_to.strip()}]
+    #     result = self.campaign_id._send_via_marketing_api(body=text, tos=tos, message_type=message_type)
+        
         
      
         #     raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
-        if result.get('success'):
-            # Send bus notification to close popup (like campaign does)
-            popup_id = popup.id if popup else (
-                self.env['whatsapp.qr.popup'].search([
-                    ('original_test_wizard_id', '=', self.id)
-                ], order='create_date desc', limit=1).id or 0
-            )
+        # if result.get('success'):
+        #     # Send bus notification to close popup (like campaign does)
+        #     popup_id = popup.id if popup else (
+        #         self.env['whatsapp.qr.popup'].search([
+        #             ('original_test_wizard_id', '=', self.id)
+        #         ], order='create_date desc', limit=1).id or 0
+        #     )
             
-            message = _("Test message sent to %s") % self.phone_to
-            notif_type = "success"
+        #     message = _("Test message sent to %s") % self.phone_to
+        #     notif_type = "success"
             
-            payload = {
-                'action': 'close',
-                'popup_id': popup_id,
-                'title': _('WhatsApp Test'),
-                'message': message,
-                'type': notif_type,
-                'sticky': False,
-                'success': True
-            }
+        #     payload = {
+        #         'action': 'close',
+        #         'popup_id': popup_id,
+        #         'title': _('WhatsApp Test'),
+        #         'message': message,
+        #         'type': notif_type,
+        #         'sticky': False,
+        #         'success': True
+        #     }
             
-            dbname = self._cr.dbname
-            popup_channel = f"{dbname}_qr_popup_{popup_id}"
-            self.env['bus.bus']._sendone(
-                popup_channel,
-                'qr_popup_close',
-                payload
-            )
+        #     dbname = self._cr.dbname
+        #     popup_channel = f"{dbname}_qr_popup_{popup_id}"
+        #     self.env['bus.bus']._sendone(
+        #         popup_channel,
+        #         'qr_popup_close',
+        #         payload
+        #     )
             
-            current_user = self.env.user
-            if current_user and current_user.partner_id:
-                self.env['bus.bus']._sendone(
-                    current_user.partner_id,
-                    'qr_popup_close',
-                    payload
-                )
+        #     current_user = self.env.user
+        #     if current_user and current_user.partner_id:
+        #         self.env['bus.bus']._sendone(
+        #             current_user.partner_id,
+        #             'qr_popup_close',
+        #             payload
+        #         )
             
-            # Return notification action
-            return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {
-                    'title': _('Test Sent'),
-                    'message': message,
-                    'type': 'success',
-                }
-            }
-        else:
-            raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))
+        #     # Return notification action
+        #     return {
+        #         'type': 'ir.actions.client',
+        #         'tag': 'display_notification',
+        #         'params': {
+        #             'title': _('Test Sent'),
+        #             'message': message,
+        #             'type': 'success',
+        #         }
+        #     }
+        # else:
+        #     raise UserError(_("Failed to send test message: %s") % result.get('error', 'Unknown error'))

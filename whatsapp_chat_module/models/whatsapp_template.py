@@ -13,6 +13,7 @@ class WhatsAppTemplate(models.Model):
     _description = 'WhatsApp Template'
     _inherit = ['mail.render.mixin']
     _order = 'user_id,name,id'
+    
 
     # Basic fields
     name = fields.Char('Name', translate=True, help="Template name")
@@ -22,19 +23,19 @@ class WhatsAppTemplate(models.Model):
     
     # Model association
     model_id = fields.Many2one('ir.model', 'Applies to', ondelete='cascade',
-                               help="The type of document this template can be used with")
-    model = fields.Char('Related Document Model', related='model_id.model', index=True, store=True, readonly=True)
+    help="The type of document this template can be used with")
+    model = fields.Char('Related Document Model', related='model_id.model',store=True)
     
     # User association
     user_id = fields.Many2one('res.users', string='User', domain="[('share', '=', False)]",
-                               help='The template belongs to this user. Leave empty for all users.')
+    help='The template belongs to this user. Leave empty for all users.')
     
     # Message content
     subject = fields.Char('Subject', translate=True, prefetch=True,
-                         help="Subject (placeholders may be used here, e.g., {{ object.name }})")
+    help="Subject (placeholders may be used here, e.g., {{ object.name }})")
     body_html = fields.Html('Body', render_engine='qweb', render_options={'post_process': True},
-                           prefetch=True, translate=True, sanitize=False,
-                           help="Message body (placeholders may be used here, e.g., {{ object.name }})")
+    prefetch=True, translate=True, sanitize=False,
+    help="Message body (placeholders may be used here, e.g., {{ object.name }})")
     
     # Attachments
     attachment_ids = fields.Many2many(

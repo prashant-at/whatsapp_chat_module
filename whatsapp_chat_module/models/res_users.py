@@ -18,15 +18,34 @@ class ResUsers(models.Model):
         store=False
     )
     
+    # def _compute_authorized_whatsapp_connections(self):
+    #     """Compute authorized connections for this user"""
+    #     for user in self:
+    #         if user.id:
+    #             # Find connections where user is in authorized_person_ids
+    #             connections = self.env['whatsapp.connection'].search([
+    #                 ('authorized_person_ids', 'in', [user.id])
+    #             ])
+    #             user.authorized_whatsapp_connection_ids = connections
+    #         else:
+    #             user.authorized_whatsapp_connection_ids = False
+
     def _compute_authorized_whatsapp_connections(self):
-        """Compute authorized connections for this user"""
+        if not self:
+            return
+        
+        # Single query: get all connections that have ANY of our users authorized
+        all_connections = self.env['whatsapp.connection'].search([
+            ('authorized_person_ids', 'in', self.ids)
+        ])
+        
+        # Build mapping: user_id -> list of connections
+        user_connections = {user_id: self.env['whatsapp.connection'] for user_id in self.ids}
+        for connection in all_connections:
+            for user_id in connection.authorized_person_ids.ids:
+                if user_id in user_connections:
+                    user_connections[user_id] |= connection
+        
         for user in self:
-            if user.id:
-                # Find connections where user is in authorized_person_ids
-                connections = self.env['whatsapp.connection'].search([
-                    ('authorized_person_ids', 'in', [user.id])
-                ])
-                user.authorized_whatsapp_connection_ids = connections
-            else:
-                user.authorized_whatsapp_connection_ids = False
+            user.authorized_whatsapp_connection_ids = user_connections.get(user.id, self.env['whatsapp.connection'])
 

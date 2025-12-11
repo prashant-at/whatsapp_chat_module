@@ -79,6 +79,7 @@ Perfect for businesses that want to:
             'security/whatsapp_connection_security.xml',
             'data/mail_subtype_data.xml',
             'data/whatsapp_connection_data.xml',
+            'data/whatsapp_config_parameters.xml',
             'views/connection_views.xml',
             'views/whatsapp_action.xml',
             'views/whatsapp_template_views.xml',

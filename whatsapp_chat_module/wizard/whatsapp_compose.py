@@ -54,40 +54,7 @@ class WhatsappCompose(models.TransientModel):
         help="JSON array of API requests that failed due to connection issues (status 201). Will be retried when connection is ready."
     )
     
-    # def do_something(self, data):
-    #     """Handle RPC calls from frontend socket service"""
-    #     if data.type == 'qr_expired':
-    #         self.qr_popup_id = data.data.qr_popup_id
-    #     elif data.type == 'phone_mismatch':
-    #         self.phone_mismatch = data.data.phone_mismatch
-    #     elif data.type == 'incoming_message':
-    #         self.incoming_message = data.data.incoming_message
-    #     elif data.type == 'outgoing_message':
-    #         self.outgoing_message = data.data.outgoing_message
-    #     elif data.type == 'pending_message_sent':
-    #         self.pending_message_sent = data.data.pending_message_sent
-    #     return {'message': 'Success!'}
-    
-    # UNUSED: Computed field for partner display names - not used anywhere
-    # @api.depends('partner_ids')
-    # def _compute_partner_display_names(self):
-    #     """Compute display names with mobile numbers"""
-    #     for wizard in self:
-    #         if wizard.partner_ids:
-    #             display_names = []
-    #             for partner in wizard.partner_ids:
-    #                 if partner.mobile:
-    #                     display_names.append(f"{partner.name} ({partner.mobile})")
-    #                 else:
-    #                     display_names.append(partner.name)
-    #             wizard.partner_display_names = ', '.join(display_names)
-    #         else:
-    #             wizard.partner_display_names = ''
-    # partner_display_names = fields.Char(
-    #     string='Recipients with Numbers',
-    #     compute='_compute_partner_display_names',
-    #     store=True
-    # )
+ 
     
     template_name = fields.Char('Template Name', default='hello_world')
     language_code = fields.Char('Language Code', default='en')
@@ -112,23 +79,9 @@ class WhatsappCompose(models.TransientModel):
             if default_connection:
                 result['from_number'] = default_connection.id
             
-            # Find default WhatsApp template
-            # SIMPLIFIED: Just get first template for the model (no state-based selection)
-            # OLD LOGIC (commented out): State-based template selection using model-specific method
-            # default_template = None
-            # if hasattr(record, '_find_whatsapp_template'):
-            #     try:
-            #         default_template = record._find_whatsapp_template()
-            #     except Exception as e:
-            #         _logger.warning(f"Error calling _find_whatsapp_template on {active_model}: {str(e)}")
-            # 
-            # # Fallback: search for first template if model method didn't return one
-            # if not default_template:
-            #     default_template = self.env['whatsapp.template'].search([
-            #         ('model', '=', active_model)
-            #     ], order='id', limit=1)
+          
             
-            # NEW LOGIC: Just get first template for the model (no state-based selection)
+            
             default_template = self.env['whatsapp.template'].search([
                 ('model', '=', active_model)
             ], order='id', limit=1)
@@ -353,43 +306,8 @@ class WhatsappCompose(models.TransientModel):
         
         return template_values
 
-    # @api.model
-    # def open_qr_popup_from_socket(self, popup_id):
-    #     """Open QR popup from socket event using direct Odoo action"""
-    #     try:
-    #         # Return the same action structure that works in action_send_whatsapp
-    #         return {
-    #             'type': 'ir.actions.act_window',
-    #             'name': 'WhatsApp Authentication Required',
-    #             'res_model': 'whatsapp.qr.popup',
-    #             'res_id': popup_id,
-    #             'view_mode': 'form',
-    #             'view_id': self.env.ref('whatsapp_chat_module.whatsapp_qr_popup_view').id,
-    #             'target': 'new',
-    #             'context': {
-    #                 'active_model': self.env.context.get('active_model'),
-    #                 'active_id': self.env.context.get('active_id'),
-    #                 'active_ids': self.env.context.get('active_ids'),
-    #             }
-    #         }
-    #     except Exception as e:
-    #         _logger.error(f" [Compose Wizard] Error opening QR popup from socket: {e}")
-    #         return {
-    #             'type': 'ir.actions.client',
-    #             'tag': 'display_notification',
-    #             'params': {
-    #                 'title': _('Error'),
-    #                 'message': _('Failed to open QR popup: %s') % str(e),
-    #                 'type': 'danger',
-    #                 'sticky': True,
-    #             }
-    #         }
-
-    # UNUSED: Empty callback method - not implemented or called anywhere
-    # def whatsapp_service_callback(self, data):
-    #     """Callback function for WhatsApp service"""
-    #     pass
-
+   
+  
     def action_send_whatsapp(self):
         """Send WhatsApp messages via Socket.IO real-time communication"""
         self.ensure_one()

@@ -29,6 +29,9 @@
                                 invisible="state != 'draft'"/>
                         <button name="action_test" string="Test" type="object"
                                 invisible="state != 'draft'"/>
+                        <button name="action_fetch_status" string="Fetch Status" type="object"
+                                class="oe_highlight"
+                                invisible="state != 'sent'"/>
                         <field name="state" widget="statusbar" 
                                statusbar_visible="draft,sending,sent"/>
                     </header>
@@ -85,6 +88,14 @@
                                 <field name="body" widget="html" class="oe-bordered-editor"
                                     options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
                                 <field name="attachment_ids" widget="many2many_binary"/>
+                            </page>
+                            <page string="Recipient Status" name="recipient_status">
+                                <field name="recipient_status_ids" readonly="1">
+                                    <tree string="Recipient Statuses">
+                                        <field name="phone" required="1"/>
+                                        <field name="status_display"/>
+                                    </tree>
+                                </field>
                             </page>
                         </notebook>
                     </sheet>

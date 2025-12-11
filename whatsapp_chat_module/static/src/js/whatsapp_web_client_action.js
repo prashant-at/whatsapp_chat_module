@@ -85,7 +85,7 @@ export class WhatsAppWebClientAction extends Component {
 
     _setupSocketListeners() {
         this._unsubscribe.push(socketService.on('status', async (data) => {
-            console.log("status event data",data)
+            
             try {
                 if(data.type === "qr_code"){
                     this._handleQRCode(data.data)
@@ -209,7 +209,7 @@ export class WhatsAppWebClientAction extends Component {
             }
         }));
         this._unsubscribe.push(socketService.on('chat', (chatData) => {
-            console.log("chat event",chatData)
+           
             try {
                 this.handleChatUpdate(chatData);
             } catch (error) {
@@ -226,20 +226,13 @@ export class WhatsAppWebClientAction extends Component {
       
        
         this._unsubscribe.push(socketService.on('contact', (contactData) => {
-            console.log("contact event",contactData)
+            
             try {
                 this.handleContactEvent(contactData);
             } catch (error) {
                 console.error("[WA] Error in contact handler:", error.message || error);
             }
         }));
-        // this._unsubscribe.push(socketService.on('message', (msg) => {
-        //     try {
-        //         this.handleMessageEvent(msg);
-        //     } catch (error) {
-        //         console.error("[WA] Error in message handler:", error.message || error);
-        //     }
-        // }));
     }
 
     _handleQRCode(data) {
@@ -423,6 +416,7 @@ export class WhatsAppWebClientAction extends Component {
             const url = new URL(`${this.backendApiUrl}/api/chat`);
             url.searchParams.append('pageIndex', pageIndexNum.toString());
             url.searchParams.append('pageSize', pageSizeNum.toString());
+            url.searchParams.append('hasPagination',true);
             const headers = {
                 'x-api-key': this.apiKey.trim(),
                 'x-phone-number': this.phoneNumber.trim(),
@@ -537,8 +531,7 @@ export class WhatsAppWebClientAction extends Component {
             }
         }
         // Determine direction of latest message
-        const latestMessageDirection = latest.fromMe ? 'outbound' : (latest.direction || (latest.fromMe === false ? 'inbound' : null));
-        
+        const latestMessageDirection = latest.fromMe ? 'outbound' : (latest.direction || (latest.fromMe === false ? 'inbound' : null));                                                                                 
         return {
             ...chat,
             latestMessage: preview,
@@ -1248,6 +1241,7 @@ export class WhatsAppWebClientAction extends Component {
             url.searchParams.append('chatId', chatId);
             url.searchParams.append('pageIndex', parseInt(pageIndex, 10).toString());
             url.searchParams.append('pageSize', parseInt(pageSize, 10).toString());
+            url.searchParams.append('hasPagination',true);
             let headers;
             try {
                 headers = { ...this._getApiHeaders(), 'Content-Type': 'application/json' };
@@ -1417,16 +1411,16 @@ export class WhatsAppWebClientAction extends Component {
     }
     
     async sendMessage() {
-        console.log('send message click')
+        
         if (this.state.editingMessageId) { this.saveEdit(); return; }
         const messageText = this.state.messageInput.trim();
         const hasMedia = this.state.selectedMedia !== null;
         if ((!messageText && !hasMedia) || !this.state.selectedConversation) return;
         const selected = this.state.selectedConversation;
-        console.log("selected convo",selected)
+       
         const recipientPhone = selected.phoneNumber?.trim();
         const chatId = selected.id;
-        console.log("chatid",chatId)
+        
         // if (!recipientPhone) return;
         // if (!this.apiKey || !this.phoneNumber) return;
         const originalMessage = messageText;
@@ -1484,7 +1478,7 @@ export class WhatsAppWebClientAction extends Component {
             }
                
                 response = await fetch(url, { method: 'POST', headers, body: formData });
-            console.log("responsesendmessage",response);
+           
             this.state.mediaUploading = false;
             const result = await this._parseResponse(response);
 
@@ -1715,7 +1709,7 @@ export class WhatsAppWebClientAction extends Component {
             ?.replace(/\+/g, '')
             .replace(/\s+/g, '')
             .replace(/@c\.us$/i, '');
-        console.log("currentuserId",currentUserId)
+       
         // Check if already reacted
         const alreadyReacted = message.reactions?.some(r => {
             if (r.emoji !== emoji) return false;
@@ -1726,7 +1720,7 @@ export class WhatsAppWebClientAction extends Component {
                     ?.replace(/\+/g, '')
                     .replace(/\s+/g, '')
                     .replace(/@c\.us$/i, '');
-                console.log("normalizedUserId",normalizedUserId)
+               
                 return normalizedUserId === currentUserId;
             });
         });
@@ -1787,7 +1781,7 @@ export class WhatsAppWebClientAction extends Component {
 
     async deleteMessageForMe() {
         const message = this.state.contextMenuMessage;
-        if (!message || !message.id || message.direction !== 'outbound') return;
+        if (!message || !message.id) return;
         
         this.closeMessageContextMenu();
         await this.deleteMessage(message.id, false);
@@ -2095,8 +2089,33 @@ export class WhatsAppWebClientAction extends Component {
         this.openFilePickerForType(this.state.attachmentPickerType || 'all');
     }
 
-    toggleAttachmentMenu() {
+    toggleAttachmentMenu(event) {
+        if (event) {
+            event.stopPropagation(); // Prevent bubbling to document click handler
+        }
         this.state.showAttachmentMenu = !this.state.showAttachmentMenu;
+        
+        // Add click outside handler when opening menu (same pattern as message context menu)
+        if (this.state.showAttachmentMenu) {
+            setTimeout(() => {
+                const handleClickOutside = (e) => {
+                    if (this.state.showAttachmentMenu) {
+                        const attachmentMenu = this.el?.querySelector('.attachment-menu');
+                        const toggleButton = this.el?.querySelector('.attachment-toggle');
+                        const isInsideMenu = attachmentMenu && (attachmentMenu.contains(e.target) || attachmentMenu === e.target);
+                        const isToggleButton = toggleButton && (toggleButton.contains(e.target) || toggleButton === e.target);
+                        
+                        if (!isInsideMenu && !isToggleButton) {
+                            this.closeAttachmentMenu();
+                            document.removeEventListener('click', handleClickOutside);
+                        }
+                    }
+                };
+                setTimeout(() => {
+                    document.addEventListener('click', handleClickOutside);
+                }, 0);
+            }, 0);
+        }
     }
 
     closeAttachmentMenu() {
@@ -2145,7 +2164,7 @@ export class WhatsAppWebClientAction extends Component {
                 accept: ".pdf,.doc,.docx,.xls,.xlsx,.txt,.csv,.ppt,.pptx"
             },
             media: {
-                accept: "image/*"
+                accept: "image/*,video/*"
             },
             audio: {
                 accept: "audio/*"
@@ -2222,7 +2241,8 @@ export class WhatsAppWebClientAction extends Component {
         if (!this.state.selectedConversation) return;
         if (this._creatingLeadMessageId === message.id) return;
         const conversation = this.state.selectedConversation;
-        console.log("leadConversation",conversation)
+
+        
         const payload = {
             message_id: message.id,
             message_content: message.body || message.content || '',
@@ -2230,8 +2250,9 @@ export class WhatsAppWebClientAction extends Component {
             timestamp: message.timestamp || null,
             message_direction: message.direction,
             contact_name: conversation.contact_name || conversation.name || '',
-            contact_phone: conversation.contact_phone || '',
+            contact_phone: conversation.phoneNumber || '',
             conversation_id: conversation.conversation_id || conversation.id || null,
+            fromContact: message.fromContact.phoneNumber || null,
         };
         this._creatingLeadMessageId = message.id;
         try {
@@ -2266,7 +2287,7 @@ export class WhatsAppWebClientAction extends Component {
     }
     
     handleChatUpdate(payload) {
-        console.log("chatdataupdate",payload)
+       
         const chatData = payload.data
         try {
             const chatId = chatData.id || chatData.chatId;
@@ -2394,7 +2415,7 @@ export class WhatsAppWebClientAction extends Component {
     }
     
     handleReactionEvent(msg) {
-        console.log('data in handlereaction',msg.reactions)
+        
         try {
             if (!msg.reactions || !Array.isArray(msg.reactions) || !msg.id) return;
             
@@ -2442,7 +2463,7 @@ export class WhatsAppWebClientAction extends Component {
     
     handleMessageEvent(chatData) {
         const msg = chatData.data;
-        console.log("[WA] handleMessageEvent: Received message", msg);
+       
         try {
             if (!msg || !msg.id) {
                 console.log("[WA] handleMessageEvent: No msg or msg.id, returning");

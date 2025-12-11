@@ -125,15 +125,16 @@
 
 .contacts-loading i,
 .no-contacts i {
-    font-size: 48px;
-    margin-bottom: 16px;
+    font-size: 20px;
+    margin-bottom: 0px;
     color: #25d366;
-    display: block;
+    display: inline-block;
+    
 }
 
 .contacts-loading span {
-    display: block;
-    margin-top: 8px;
+    display: inline-block;
+    margin-top: 0px;
     font-size: 14px;
 }
 

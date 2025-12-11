@@ -60,7 +60,7 @@ export class SocketService {
 
     async connect(userId, options = {}) {
         try {
-            let backendUrl = 'http://localhost:3000';
+            let backendUrl = 'http://localhost:4001'; // Default socket URL fallback
             try {
                 const response = await fetch('/web/dataset/call_kw', {
                     method: 'POST',
@@ -71,16 +71,17 @@ export class SocketService {
                         params: {
                             model: 'ir.config_parameter',
                             method: 'get_param',
-                            args: ['whatsapp_chat_module.backend_api_url', 'http://localhost:3000'],
+                            args: ['whatsapp_chat_module.socket_url', 'http://localhost:4001'],
                             kwargs: {}
                         }
                     })
                 });
                 const data = await response.json();
-                // if (data.result) backendUrl = data.result;
-                backendUrl = 'http://localhost:4001';
+                if (data.result) {
+                    backendUrl = data.result;
+                }
             } catch (error) {
-                console.warn("[WA][Socket] Failed to get backend URL, using default:", error);
+                console.warn("[WA][Socket] Failed to get socket URL from config, using default:", error);
             }
             // Get credentials that will be used for connection
             const apiKey = this.apiKey || '';

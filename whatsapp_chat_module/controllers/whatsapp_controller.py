@@ -26,19 +26,19 @@ class WhatsAppController(http.Controller):
     @http.route('/whatsapp/create_lead_action', type='json', auth='user' , csrf=True)
     def create_lead_action(self, **payload):
         """Return an action that opens the CRM lead form prefilled with WhatsApp data"""
+
+
         message_direction = payload.get('message_direction')
         if message_direction and message_direction != 'inbound':
             return {'error': 'Leads can only be created from inbound messages.'}
 
         # Input validation and sanitization
+        fromContact = payload.get('fromContact')
         contact_name = (payload.get('contact_name') or '').strip()[:128]  # Limit length
-        contact_phone = (payload.get('contact_phone') or '').strip()[:20]  # Limit length
+        # contact_phone = (payload.get('contact_phone') or '').strip()[:20]  # Limit length
         
         # Validate phone number format (E.164 format: +[country code][number])
-        if contact_phone and not re.match(r'^\+?[1-9]\d{1,14}$', contact_phone):
-            _logger.warning(f"Invalid phone number format received: {contact_phone[:10]}...")
-            # Don't reject, but log warning - phone might be in different format
-        
+    
         message_content = (payload.get('message_content') or '').strip()[:5000]  # Limit length
         message_id = payload.get('message_id')
         if message_id and not isinstance(message_id, (str, int)):
@@ -73,8 +73,8 @@ class WhatsAppController(http.Controller):
             'default_name': lead_name,
             'default_contact_name': contact_name or False,
             # 'default_partner_name': contact_name or False,
-            # 'default_phone': contact_phone or False,
-            'default_mobile': contact_phone or False,
+            # 'default_phone': fromContact,
+            'default_mobile': fromContact,
             'default_description': description,
             'default_referred': 'WhatsApp',
         })
